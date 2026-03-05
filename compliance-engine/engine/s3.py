@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import boto3
-from botocore.exceptions import ClientError
 
 log = logging.getLogger(__name__)
 
