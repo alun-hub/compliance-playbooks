@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS compliance_status (
     rsyslog_ok      BOOLEAN
 );
 
-CREATE INDEX IF NOT EXISTS idx_compliance_mac      ON compliance_status (mac_address);
-CREATE INDEX IF NOT EXISTS idx_compliance_time     ON compliance_status (checked_at DESC);
-CREATE INDEX IF NOT EXISTS idx_compliance_action   ON compliance_status (action);
+CREATE INDEX IF NOT EXISTS idx_compliance_mac    ON compliance_status (mac_address);
+CREATE INDEX IF NOT EXISTS idx_compliance_time   ON compliance_status (checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_compliance_action ON compliance_status (action);
 """
 
 
