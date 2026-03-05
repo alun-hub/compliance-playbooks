@@ -9,9 +9,11 @@ Centralt system för att övervaka och verifiera att en stor installationsbas av
 | [docs/deployment.md](docs/deployment.md) | Komplett steg-för-steg för driftsättning i produktion |
 | [docs/compliance-tuning.md](docs/compliance-tuning.md) | Justera karantänregler, skippa OpenSCAP-regler, tailoring-filer |
 
+---
+
 ## Bakgrund och mål
 
-I en stor miljö med många Fedora-klienter är det svårt att garantera att säkerhetskonfigurationer förblir intakta. En användare eller ett intrång kan stänga av `auditd`, sätta SELinux i permissive-läge eller stoppa loggvidebefordran - utan att det märks centralt. Det räcker inte att konfigurera klienterna rätt en gång; de måste kontinuerligt verifiera sig själva och rapportera sin status.
+I en stor miljö med många Fedora-klienter är det svårt att garantera att säkerhetskonfigurationer förblir intakta. En användare eller ett intrång kan stänga av `auditd`, sätta SELinux i permissive-läge eller stoppa loggvidebefordran — utan att det märks centralt. Det räcker inte att konfigurera klienterna rätt en gång; de måste kontinuerligt verifiera sig själva och rapportera sin status.
 
 Systemet löser detta genom tre sammankopplade delar:
 
@@ -69,34 +71,71 @@ Systemet löser detta genom tre sammankopplade delar:
 
 ---
 
+## Repostruktur
+
+```
+compliance-playbooks/
+├── local.yml                        # Ansible entry point (körs av ansible-pull)
+├── group_vars/all.yml               # Standardvärden för alla klienter
+├── bootstrap.yml                    # Engångskörning för att sätta upp nya klienter
+├── roles/
+│   ├── self_check/                  # Verifiera att timern lever
+│   ├── security_checks/             # auditd, SELinux, rsyslog, firewalld
+│   ├── openscap/                    # CIS-benchmark scan
+│   └── report/                      # Bygg JSON-rapport och pusha till S3
+├── systemd/
+│   ├── ansible-pull.service         # Läser konfiguration från /etc/fedora-compliance/
+│   └── ansible-pull.timer           # Kör var 30:e minut
+├── packaging/
+│   ├── fedora-compliance-client.spec  # RPM SPEC-fil
+│   ├── build-rpm.sh                   # Byggskript
+│   ├── client.conf                    # Konfigmall (git-URL, branch)
+│   └── vars.yml                       # Ansible-variabelmall (S3-bucket m.m.)
+├── compliance-engine/               # Central compliance-motor (Python)
+│   ├── engine/
+│   │   ├── ise.py                   # Cisco ISE ERS API-klient
+│   │   ├── s3.py                    # Läser compliance-rapporter från S3
+│   │   ├── evaluator.py             # Beslutslogik (karantän/alert/ok)
+│   │   ├── db.py                    # Skriver verdikter till PostgreSQL
+│   │   └── main.py                  # Huvudloop
+│   ├── config.yaml                  # Konfiguration (ISE, S3, PostgreSQL)
+│   └── systemd/                     # Service och timer för compliance-motorn
+├── grafana/
+│   └── dashboard.json               # Grafana-dashboard (importeras manuellt)
+├── iac/
+│   ├── s3-bucket-policy.json        # Kräver KMS och TLS
+│   ├── iam-client-policy.json       # Klienter får bara skriva sin egna rapport
+│   └── iam-engine-policy.json       # Compliance-motorn får läsa alla rapporter
+├── test/
+│   ├── docker-compose-test.yaml     # MinIO, PostgreSQL, fake-ISE, Grafana
+│   ├── fake-ise/                    # Mock av Cisco ISE ERS API (FastAPI)
+│   ├── seed.py                      # Lägger in testrapporter i MinIO
+│   ├── config.yaml                  # Compliance-motorkonfig för testmiljö
+│   └── run-test.sh                  # Kör hela testflödet
+└── docs/
+    ├── deployment.md                # Produktionsdriftsättning steg-för-steg
+    └── compliance-tuning.md         # Justera regler, tailoring-filer
+```
+
+---
+
 ## Komponenter
 
-### compliance-playbooks/ — Ansible-roller på klienterna
+### Ansible-roller på klienterna
 
-Körs lokalt på varje klient via `ansible-pull` och systemd timer. Git-repot är den enda källan till sanning för vad som ska köras.
-
-#### Roller
+Körs lokalt på varje klient via `ansible-pull` och systemd timer. Git-repot är den enda källan till sanning.
 
 **`self_check`** — körs alltid och först
-Verifierar att `ansible-pull.timer` är aktiv. Om timern är inaktiverad (t.ex. av en användare eller ett intrång) skickas omedelbart en nödrapport till S3 med `emergency: true`. Compliance-motorn ser detta och triggar karantän.
+Verifierar att `ansible-pull.timer` är aktiv. Om timern är inaktiverad skickas omedelbart en nödrapport till S3 med `emergency: true` — compliance-motorn triggar karantän.
 
 **`security_checks`** — snabba systemkontroller
-Kontrollerar status på kritiska säkerhetstjänster:
-- `auditd` — kernel audit-loggning
-- SELinux — måste vara i `Enforcing`-läge
-- `rsyslog` — loggning till central loggplattform
-- `firewalld` — värdbaserad brandvägg
-- Audit-regler — att faktiska regler är laddade
+Kontrollerar `auditd`, SELinux (måste vara Enforcing), `rsyslog` och konfigurerad logg-forwarding, `firewalld` samt att auditd-regler är laddade.
 
 **`openscap`** — CIS-benchmarkscan
-Kör `oscap xccdf eval` mot Fedoras CIS-profil. Eftersom en fullständig scan tar 5–10 minuter körs den bara en gång per dygn (`oscap_max_age_minutes: 1440`). Resultatet parsas av ett Python-skript och struktureras som:
-- Total score (0–100)
-- Antal pass/fail/notapplicable
-- Lista med misslyckade regler, sorterade efter allvarlighetsgrad
-- Antal `high`-regler som misslyckats (används av compliance-motorn)
+Kör `oscap xccdf eval` mot Fedoras CIS-profil en gång per dygn. Resultatet parsas till score, pass/fail-antal och lista med misslyckade regler sorterade efter allvarlighetsgrad.
 
 **`report`** — sammanställer och skickar
-Samlar fakta från de övriga rollerna och bygger ett JSON-dokument som pushas till S3 (`s3://bucket/compliance/<hostname>/latest.json`). Rapporten innehåller MAC-adress för korrelation mot ISE-sessioner och tidsstämpel för att detektera tysta klienter.
+Bygger ett JSON-dokument och pushar till `s3://bucket/compliance/<hostname>/latest.json`. Rapporten innehåller MAC-adress (för ISE-korrelation) och tidsstämpel (för att detektera tysta klienter).
 
 #### Timing
 
@@ -110,20 +149,11 @@ Systemd timer: var 30:e minut (± 5 min slumpmässig fördröjning)
 
 ---
 
-### compliance-engine/ — Compliance-motor (central server)
+### Compliance-motor
 
-Körs på en central server var 15:e minut via systemd timer. Korrelerar aktiva ISE-sessioner mot S3-rapporter och vidtar åtgärder.
+Körs på en central server var 15:e minut. Korrelerar aktiva ISE-sessioner mot S3-rapporter och vidtar åtgärder.
 
-#### Flöde
-
-1. Hämtar alla aktiva 802.1x-sessioner från ISE via ERS REST API (MAC-adress, användare, switch-IP)
-2. Laddar alla `latest.json` från S3 och indexerar dem på MAC-adress
-3. För varje autentiserad session — utvärderar compliance-status
-4. Triggar ISE ANC-policy vid regelbrott
-
-#### Beslutslogik
-
-Utvärderingen sker i prioritetsordning. Så fort ett villkor träffas fattas beslut utan att kontrollera resten.
+#### Beslutslogik (prioritetsordning)
 
 | Tillstånd | Åtgärd | Motivering |
 |---|---|---|
@@ -138,16 +168,7 @@ Utvärderingen sker i prioritetsordning. Så fort ett villkor träffas fattas be
 | `compliant: false` (övriga) | **Alert** | Loggas men ingen nätverksåtgärd |
 | Allt OK | Ingenting | — |
 
-**Varför 90 minuter och inte 30?**
-Timern kör var 30:e minut med upp till 5 minuters slumpmässig fördröjning. En missad körning (t.ex. klienten var i viloläge) ska inte omedelbart trigga karantän. 90 minuter ger utrymme för en missad körning plus marginaler.
-
-#### "Kommer och går"-problematiken
-
-Klienter som är offline syns helt enkelt inte i ISE:s aktiva sessioner och granskas därför inte. Det är fullt normalt att laptops stängs av och slås på. Compliance-motorn agerar bara på klienter som faktiskt sitter på nätverket just nu.
-
-#### ISE ANC (Adaptive Network Control)
-
-I stället för att prata direkt med switcharna används ISE ANC. ISE skickar RADIUS CoA (Change of Authorization) till switchen och placerar klienten i karantän-VLAN. Förutsättning: en ANC-policy med namnet `Quarantine` måste skapas manuellt i ISE innan systemet tas i drift.
+Klienter som är offline syns inte i ISE:s aktiva sessioner och granskas inte — det hanterar "kommer och går"-problematiken naturligt.
 
 ---
 
@@ -172,8 +193,7 @@ I stället för att prata direkt med switcharna används ISE ANC. ISE skickar RA
     "notapplicable": 12,
     "high_severity_failures": 0,
     "failed_rules": [
-      {"id": "xccdf_org.ssgproject.content_rule_package_aide_installed", "severity": "medium"},
-      ...
+      {"id": "xccdf_org.ssgproject.content_rule_package_aide_installed", "severity": "medium"}
     ]
   },
   "security_checks": {
@@ -193,118 +213,103 @@ I stället för att prata direkt med switcharna används ISE ANC. ISE skickar RA
 
 ## Konfiguration
 
-### compliance-playbooks/group_vars/all.yml
+### Klienter — `/etc/fedora-compliance/`
 
-```yaml
-s3_bucket: ditt-compliance-bucket
-oscap_profile: xccdf_org.ssgproject.content_profile_cis_workstation_l1
-oscap_max_age_minutes: 1440   # OpenSCAP körs en gång per dygn
+Med RPM-paketet installerat konfigureras klienterna via två filer:
+
+**`/etc/fedora-compliance/client.conf`** — git-URL (läses av systemd):
+```ini
+COMPLIANCE_GIT_URL=https://git.intern.example.com/infra/compliance-playbooks.git
+COMPLIANCE_GIT_BRANCH=main
 ```
 
-### compliance-engine/config.yaml
+**`/etc/fedora-compliance/vars.yml`** — Ansible-variabler:
+```yaml
+s3_bucket: ert-compliance-bucket
+oscap_profile: xccdf_org.ssgproject.content_profile_cis_workstation_l1
+oscap_max_age_minutes: 1440
+
+# On-prem S3 (MinIO, Ceph m.fl.) — utelämna för AWS:
+# s3_endpoint_url: https://minio.intern.example.com
+# s3_access_key: nyckel
+# s3_secret_key: hemlighet
+# s3_sse: false
+```
+
+`group_vars/all.yml` i repot innehåller standardvärden — `vars.yml` på klienten overridar per-miljö.
+
+### Compliance-motor — `compliance-engine/config.yaml`
 
 ```yaml
 ise:
-  host: ise.example.com
+  host: ise.intern.example.com
   username: compliance-svc
-  password: "${ISE_PASSWORD}"
+  password: "${ISE_PASSWORD}"   # Sätts via /etc/compliance-engine/secrets.env
   verify_ssl: true
 
 s3:
-  bucket: ditt-compliance-bucket
+  bucket: ert-compliance-bucket
 
 evaluation:
   max_report_age_minutes: 90
   grace_period_minutes: 10
-  quarantine_policy: Quarantine
+  quarantine_policy: Quarantine  # Måste matcha ANC-policy i ISE
 
-dry_run: false   # Sätt till true för att testa utan att karantänera
+database:
+  dsn: "postgresql://compliance:<lösenord>@localhost/compliance"
+
+dry_run: false   # Sätt till true för att testa utan att faktiskt karantänera
 ```
 
 ---
 
-## Driftsättning
+## RPM-paketering
 
-### 1. Förkrav i ISE
-
-Skapa en ANC-policy med namnet `Quarantine` i ISE (Administration → Network Resources → ANC Policies) innan systemet tas i drift. Sätt åtgärden till **QUARANTINE** (placerar klienten i karantän-VLAN via CoA).
-
-Skapa ett ISE-tjänstkonto med:
-- **ERS Read** — för att läsa aktiva sessioner
-- **ERS Write** — för att applicera ANC-policys
-
-### 2. S3-bucket och IAM
-
-Ersätt `BUCKET_NAME` i `iac/`-filerna med faktiskt bucket-namn och applicera:
+Klientinstallationen distribueras som ett RPM-paket.
 
 ```bash
-# Bucket-policy (kräver ingen kryptering)
-aws s3api put-bucket-policy \
-  --bucket ditt-compliance-bucket \
-  --policy file://iac/s3-bucket-policy.json
+# Installera byggverktyg
+sudo dnf install -y rpm-build rpmdevtools
 
-# IAM-policy för klienter (en per klient via IAM Instance Profile eller IRSA)
-aws iam create-policy \
-  --policy-name FedoraComplianceClientWrite \
-  --policy-document file://iac/iam-client-policy.json
+# Bygg RPM från repots rot
+./packaging/build-rpm.sh 1.0.0
 
-# IAM-policy för compliance-motorn
-aws iam create-policy \
-  --policy-name FedoraComplianceEngineRead \
-  --policy-document file://iac/iam-engine-policy.json
+# Resultat: ~/rpmbuild/RPMS/noarch/fedora-compliance-client-1.0.0-1.fcXX.noarch.rpm
 ```
 
-IAM-client-policyn begränsar varje klient till att bara skriva under `compliance/<eget-hostname>/` via `PrincipalTag/hostname`. Tagga varje klient-roll med `hostname`-taggen.
-
-### 3. PostgreSQL för Grafana
+RPM:en installerar systemd-enheter och konfigmallar, kräver `ansible-core`, `openscap-scanner`, `scap-security-guide` och `awscli2` som beroenden, och aktiverar timern automatiskt.
 
 ```bash
-createdb compliance
-psql compliance -c "CREATE USER compliance WITH PASSWORD 'lösenord';"
-psql compliance -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO compliance;"
-# Schema skapas automatiskt vid första körning av compliance-motorn
+# Installera på klient
+sudo dnf install fedora-compliance-client-1.0.0-1.fc43.noarch.rpm
+
+# Konfigurera och starta
+sudo vi /etc/fedora-compliance/client.conf
+sudo vi /etc/fedora-compliance/vars.yml
+sudo systemctl start ansible-pull.service
 ```
 
-### 4. Bootstrap av klienter
+---
 
-Kör bootstrap-playbooken mot nya klienter via AWX eller direkt:
+## Testmiljö
+
+Kör hela systemet lokalt med podman-compose:
 
 ```bash
-# Uppdatera git_repo-variabeln i bootstrap.yml, sedan:
-ansible-playbook -i "klient1,klient2," bootstrap.yml
+# Starta MinIO, PostgreSQL, fake-ISE och Grafana
+podman-compose -f test/docker-compose-test.yaml up -d --build
 
-# Eller mot en hel grupp via AWX Job Template
+# Lägg in testrapporter i MinIO
+python3 test/seed.py
+
+# Kör compliance-motorn mot testmiljön
+PYTHONPATH=compliance-engine COMPLIANCE_CONFIG=test/config.yaml python3 -m engine.main
+
+# Grafana: http://localhost:3000
+# MinIO-konsol: http://localhost:9001  (minioadmin/minioadmin)
 ```
 
-Bootstrap-playbooken installerar Ansible, sätter upp systemd-timern och triggar en första körning direkt. Klienten är självgående därefter.
-
-### 5. Compliance-motor (central server)
-
-```bash
-# Skapa tjänstanvändare
-useradd -r -s /sbin/nologin compliance
-
-# Installera
-pip install /opt/compliance-engine/
-
-# Konfiguration
-mkdir /etc/compliance-engine
-cp compliance-engine/config.yaml /etc/compliance-engine/
-# Fyll i ISE-lösenord och DB-DSN:
-echo "ISE_PASSWORD=hemligt" > /etc/compliance-engine/secrets.env
-chmod 600 /etc/compliance-engine/secrets.env
-
-# Systemd
-cp compliance-engine/systemd/compliance-engine.{service,timer} /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now compliance-engine.timer
-```
-
-### 6. Grafana
-
-1. Lägg till en PostgreSQL-datakälla i Grafana med anslutningsuppgifterna från steg 3
-2. Importera `grafana/dashboard.json` (Dashboards → Import)
-3. Välj din PostgreSQL-datakälla när du importerar
+Testmiljön innehåller 6 förkonfigurerade scenarier (1 OK, 1 Alert, 4 karantäner) via en fake-ISE som simulerar Cisco ISE ERS API.
 
 ---
 
@@ -315,10 +320,10 @@ Sätt `dry_run: true` i `config.yaml` för att köra compliance-motorn utan att 
 OpenSCAP kan testas manuellt:
 
 ```bash
-oscap xccdf eval \
+sudo oscap xccdf eval \
   --profile xccdf_org.ssgproject.content_profile_cis_workstation_l1 \
   --results /tmp/oscap-result.xml \
   /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml
 
-python3 compliance-playbooks/roles/openscap/files/parse_oscap.py /tmp/oscap-result.xml
+python3 roles/openscap/files/parse_oscap.py /tmp/oscap-result.xml
 ```
