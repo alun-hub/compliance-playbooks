@@ -5,6 +5,7 @@ Hämtar aktiva sessioner och applicerar ANC-policys (karantän).
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -22,6 +23,7 @@ class Session:
     nas_ip: str
     nas_port: Optional[str]
     vlan: Optional[str]
+    session_start: Optional[datetime] = None  # När klienten senast autentiserades
 
 
 class ISEClient:
@@ -55,12 +57,24 @@ class ISEClient:
                 mac = r.get("callingStationId", "").lower().replace("-", ":")
                 if not mac:
                     continue
+
+                session_start = None
+                raw_start = r.get("sessionStartTime")
+                if raw_start:
+                    try:
+                        session_start = datetime.fromisoformat(
+                            raw_start.replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        pass
+
                 sessions.append(Session(
                     mac_address=mac,
                     username=r.get("userName", ""),
                     nas_ip=r.get("nasIpAddress", ""),
                     nas_port=r.get("nasPortId"),
                     vlan=r.get("vlan"),
+                    session_start=session_start,
                 ))
 
             if len(resources) < 100:
@@ -91,6 +105,33 @@ class ISEClient:
         else:
             log.error("Misslyckades karantänera %s: HTTP %s %s", mac_address, resp.status_code, resp.text)
             return False
+
+    def get_quarantined_macs(self, policy: str = "Quarantine") -> set[str]:
+        """Hämtar MAC-adresser som för närvarande har ANC-policy applicerad i ISE."""
+        macs = set()
+        page = 1
+
+        while True:
+            resp = self.session.get(
+                f"{self.base}/config/ancendpoint",
+                params={"size": 100, "page": page},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json().get("SearchResult", {})
+            resources = data.get("resources", [])
+
+            for r in resources:
+                mac = r.get("id", "").lower().replace("-", ":")
+                if mac:
+                    macs.add(mac)
+
+            if len(resources) < 100:
+                break
+            page += 1
+
+        log.info("Hämtade %d karantänerade MAC-adresser från ISE", len(macs))
+        return macs
 
     def release_quarantine(self, mac_address: str, policy: str = "Quarantine") -> bool:
         """Tar bort ANC-policy (frigör klient från karantän)."""

@@ -2,9 +2,10 @@
 Fake Cisco ISE ERS API för testning.
 
 Exponerar de endpoints som compliance-motorn använder:
-  GET  /ers/config/activesessions  - returnerar hårdkodade testsessioner
-  PUT  /ers/config/ancendpoint/apply  - loggar karantänförfrågan
-  PUT  /ers/config/ancendpoint/clear  - loggar frigörning
+  GET  /ers/config/activesessions      - returnerar hårdkodade testsessioner
+  GET  /ers/config/ancendpoint         - returnerar karantänerade MAC-adresser
+  PUT  /ers/config/ancendpoint/apply   - loggar karantänförfrågan
+  PUT  /ers/config/ancendpoint/clear   - loggar frigörning
 
 Testsessioner (MAC → scenario):
   aa:bb:cc:dd:ee:01  compliant
@@ -12,10 +13,11 @@ Testsessioner (MAC → scenario):
   aa:bb:cc:dd:ee:03  ingen rapport i S3  → karantän
   aa:bb:cc:dd:ee:04  gammal rapport       → karantän
   aa:bb:cc:dd:ee:05  nödrapport (timer)   → karantän
-  aa:bb:cc:dd:ee:06  SELinux disabled     → karantän
+  aa:bb:cc:dd:ee:06  SELinux disabled     → karantän (men simuleras redan frigiven)
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -24,17 +26,24 @@ log = logging.getLogger("fake-ise")
 
 app = FastAPI(title="Fake Cisco ISE ERS API")
 
+
+def _ts(minutes_ago: int = 60) -> str:
+    """ISO-tidsstämpel X minuter sedan."""
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 SESSIONS = [
-    {"callingStationId": "56-F7-B5-84-DE-AE", "userName": "alun",   "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/0"},
-    {"callingStationId": "AA-BB-CC-DD-EE-01", "userName": "alice",   "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/1"},
-    {"callingStationId": "AA-BB-CC-DD-EE-02", "userName": "bob",     "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/2"},
-    {"callingStationId": "AA-BB-CC-DD-EE-03", "userName": "carol",   "nasIpAddress": "10.0.0.2", "nasPortId": "GigabitEthernet1/0/1"},
-    {"callingStationId": "AA-BB-CC-DD-EE-04", "userName": "dave",    "nasIpAddress": "10.0.0.2", "nasPortId": "GigabitEthernet1/0/2"},
-    {"callingStationId": "AA-BB-CC-DD-EE-05", "userName": "eve",     "nasIpAddress": "10.0.0.3", "nasPortId": "GigabitEthernet1/0/1"},
-    {"callingStationId": "AA-BB-CC-DD-EE-06", "userName": "frank",   "nasIpAddress": "10.0.0.3", "nasPortId": "GigabitEthernet1/0/2"},
+    {"callingStationId": "56-F7-B5-84-DE-AE", "userName": "alun",  "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/0", "sessionStartTime": _ts(120)},
+    {"callingStationId": "AA-BB-CC-DD-EE-01", "userName": "alice",  "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/1", "sessionStartTime": _ts(120)},
+    {"callingStationId": "AA-BB-CC-DD-EE-02", "userName": "bob",    "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/2", "sessionStartTime": _ts(120)},
+    {"callingStationId": "AA-BB-CC-DD-EE-03", "userName": "carol",  "nasIpAddress": "10.0.0.2", "nasPortId": "GigabitEthernet1/0/1", "sessionStartTime": _ts(120)},
+    {"callingStationId": "AA-BB-CC-DD-EE-04", "userName": "dave",   "nasIpAddress": "10.0.0.2", "nasPortId": "GigabitEthernet1/0/2", "sessionStartTime": _ts(120)},
+    {"callingStationId": "AA-BB-CC-DD-EE-05", "userName": "eve",    "nasIpAddress": "10.0.0.3", "nasPortId": "GigabitEthernet1/0/1", "sessionStartTime": _ts(5)},   # grace period
+    {"callingStationId": "AA-BB-CC-DD-EE-06", "userName": "frank",  "nasIpAddress": "10.0.0.3", "nasPortId": "GigabitEthernet1/0/2", "sessionStartTime": _ts(120)},
 ]
 
-quarantined: list[dict] = []
+# Simulerar att ee:06 redan är karantänerad (men nu compliant igen → ska frigöras)
+quarantined: dict[str, str] = {"aa:bb:cc:dd:ee:06": "Quarantine"}
 
 
 @app.get("/ers/config/activesessions")
@@ -48,14 +57,27 @@ def active_sessions():
     })
 
 
+@app.get("/ers/config/ancendpoint")
+def list_anc_endpoints():
+    """Returnerar alla endpoints som har ANC-policy applicerad."""
+    resources = [{"id": mac} for mac in quarantined]
+    log.info("GET ancendpoint → %d karantänerade", len(resources))
+    return JSONResponse({
+        "SearchResult": {
+            "total": len(resources),
+            "resources": resources,
+        }
+    })
+
+
 @app.put("/ers/config/ancendpoint/apply")
 async def apply_anc(request: Request):
     body = await request.json()
     data = {d["name"]: d["value"] for d in body["OperationAdditionalData"]["additionalData"]}
     mac = data.get("macAddress", "?")
     policy = data.get("policyName", "?")
-    log.warning("🔒 KARANTÄN: mac=%s policy=%s", mac, policy)
-    quarantined.append({"mac": mac, "policy": policy})
+    log.warning("KARANTÄN: mac=%s policy=%s", mac, policy)
+    quarantined[mac] = policy
     return JSONResponse({}, status_code=200)
 
 
@@ -64,11 +86,6 @@ async def clear_anc(request: Request):
     body = await request.json()
     data = {d["name"]: d["value"] for d in body["OperationAdditionalData"]["additionalData"]}
     mac = data.get("macAddress", "?")
-    log.info("🔓 FRIGÖR: mac=%s", mac)
+    log.info("FRIGÖR: mac=%s", mac)
+    quarantined.pop(mac, None)
     return JSONResponse({}, status_code=200)
-
-
-@app.get("/ers/config/ancendpoint/quarantined")
-def list_quarantined():
-    """Hjälpendpoint för att se vad som karantänerats under testet."""
-    return quarantined

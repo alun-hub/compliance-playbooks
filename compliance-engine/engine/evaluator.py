@@ -5,6 +5,7 @@ och bestämmer vilken åtgärd som ska vidtas.
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -18,6 +19,7 @@ class Action(Enum):
     OK = "ok"
     ALERT = "alert"           # Logga och larma - ingen nätverksåtgärd
     QUARANTINE = "quarantine" # Hård karantän via ISE ANC
+    RELEASE = "release"       # Frigör från karantän - klienten är nu compliant
 
 
 @dataclass
@@ -31,27 +33,23 @@ class Verdict:
 def evaluate(
     sessions: list[Session],
     reports: dict[str, ComplianceReport],
+    quarantined_macs: set[str],
     max_report_age_minutes: float = 90,
     grace_period_minutes: float = 10,
 ) -> list[Verdict]:
     """
-    För varje ISE-autentiserad session - bestäm åtgärd.
+    För varje ISE-autentiserad session — bestäm åtgärd.
 
-    Karantän-regler (hård):
-      - Ingen rapport alls (och klienten är äldre än grace period)
-      - Rapport är för gammal (klienten tyst)
-      - Nödrapport (timer saboterad)
-      - high_severity_failures > 0
-      - Kärnfunktion inaktiverad: auditd, SELinux, rsyslog
-
-    Alert-regler (mjuk):
-      - compliant == False men inga hårda regler triggar
+    quarantined_macs: MAC-adresser som för närvarande är karantänerade i ISE.
+    Används för att avgöra om en nu-compliant klient ska frigöras.
     """
     verdicts = []
 
     for session in sessions:
         report = reports.get(session.mac_address)
-        verdict = _evaluate_session(session, report, max_report_age_minutes, grace_period_minutes)
+        verdict = _evaluate_session(
+            session, report, quarantined_macs, max_report_age_minutes, grace_period_minutes
+        )
         verdicts.append(verdict)
 
         log.info(
@@ -66,12 +64,34 @@ def evaluate(
     return verdicts
 
 
+def _session_age_minutes(session: Session) -> Optional[float]:
+    """Minuter sedan klienten senast autentiserades mot ISE."""
+    if not session.session_start:
+        return None
+    return (datetime.now(timezone.utc) - session.session_start).total_seconds() / 60
+
+
 def _evaluate_session(
     session: Session,
     report: Optional[ComplianceReport],
+    quarantined_macs: set[str],
     max_age: float,
     grace: float,
 ) -> Verdict:
+
+    session_age = _session_age_minutes(session)
+    in_quarantine = session.mac_address in quarantined_macs
+
+    # Grace period: klienten har precis autentiserats och hinner inte ha
+    # levererat en rapport ännu (t.ex. dator som startats efter dagar offline).
+    # Ge den grace_period_minutes på sig innan vi agerar.
+    if session_age is not None and session_age < grace:
+        return Verdict(
+            session=session,
+            action=Action.OK,
+            report=report,
+            reason=f"Grace period — session {session_age:.0f} min gammal (grace: {grace:.0f} min)",
+        )
 
     # Ingen rapport alls
     if report is None:
@@ -90,7 +110,7 @@ def _evaluate_session(
             reason="Nödrapport: ansible-pull timer inaktiverad",
         )
 
-    # Rapport för gammal - klienten skickar inte data
+    # Rapport för gammal — klienten är tyst
     if report.age_minutes > max_age:
         return Verdict(
             session=session,
@@ -99,7 +119,7 @@ def _evaluate_session(
             reason=f"Rapport för gammal: {report.age_minutes:.0f} min (max {max_age:.0f} min)",
         )
 
-    # Hård säkerhetscheck - dessa triggar karantän direkt
+    # Hård säkerhetscheck — dessa triggar karantän direkt
     hard_failures = _hard_security_failures(report)
     if hard_failures:
         return Verdict(
@@ -116,6 +136,15 @@ def _evaluate_session(
             action=Action.QUARANTINE,
             report=report,
             reason=f"{report.high_severity_failures} OpenSCAP-regler av hög allvarlighetsgrad misslyckas",
+        )
+
+    # Klienten är nu compliant — frigör från karantän om den satt där
+    if in_quarantine:
+        return Verdict(
+            session=session,
+            action=Action.RELEASE,
+            report=report,
+            reason=f"Åter compliant (score: {report.raw.get('oscap', {}).get('score', '?')})",
         )
 
     # Mjuk compliance-brist - alert men ingen karantän

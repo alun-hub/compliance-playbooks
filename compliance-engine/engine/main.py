@@ -10,7 +10,7 @@ import sys
 import yaml
 
 from .db import ComplianceDB
-from .evaluator import Action, evaluate
+from .evaluator import Action, Verdict, evaluate
 from .ise import ISEClient
 from .s3 import S3ReportStore
 
@@ -55,15 +55,23 @@ def run(config: dict) -> dict:
 
     sessions = ise.get_active_sessions()
     reports = store.load_all()
+    quarantine_policy = eval_cfg.get("quarantine_policy", "Quarantine")
+
+    try:
+        quarantined_macs = ise.get_quarantined_macs(policy=quarantine_policy)
+    except Exception:
+        log.exception("Kunde inte hämta karantänerade MAC-adresser från ISE — antar tom mängd")
+        quarantined_macs = set()
 
     verdicts = evaluate(
         sessions=sessions,
         reports=reports,
+        quarantined_macs=quarantined_macs,
         max_report_age_minutes=eval_cfg.get("max_report_age_minutes", 90),
         grace_period_minutes=eval_cfg.get("grace_period_minutes", 10),
     )
 
-    stats = {"ok": 0, "alert": 0, "quarantine": 0, "quarantine_errors": 0}
+    stats = {"ok": 0, "alert": 0, "quarantine": 0, "quarantine_errors": 0, "release": 0, "release_errors": 0}
     dry_run = config.get("dry_run", False)
 
     for verdict in verdicts:
@@ -75,10 +83,21 @@ def run(config: dict) -> dict:
             else:
                 ok = ise.quarantine(
                     verdict.session.mac_address,
-                    policy=eval_cfg.get("quarantine_policy", "Quarantine"),
+                    policy=quarantine_policy,
                 )
                 if not ok:
                     stats["quarantine_errors"] += 1
+
+        elif verdict.action == Action.RELEASE:
+            if dry_run:
+                log.warning("[DRY-RUN] Skulle frigöra %s: %s", verdict.session.mac_address, verdict.reason)
+            else:
+                ok = ise.release_quarantine(
+                    verdict.session.mac_address,
+                    policy=quarantine_policy,
+                )
+                if not ok:
+                    stats["release_errors"] += 1
 
     if "database" in config:
         try:
@@ -88,12 +107,13 @@ def run(config: dict) -> dict:
             log.exception("Kunde inte skriva till databasen")
 
     log.info(
-        "Körning klar | sessioner=%d ok=%d alert=%d karantän=%d fel=%d",
+        "Körning klar | sessioner=%d ok=%d alert=%d karantän=%d frigivna=%d fel=%d",
         len(sessions),
         stats["ok"],
         stats["alert"],
         stats["quarantine"],
-        stats["quarantine_errors"],
+        stats["release"],
+        stats["quarantine_errors"] + stats["release_errors"],
     )
 
     return stats

@@ -3,12 +3,12 @@
 Lägger in testrapporter i MinIO som matchar fake-ISE-sessionerna.
 
 Scenario per MAC:
-  aa:bb:cc:dd:ee:01  compliant, färsk rapport
-  aa:bb:cc:dd:ee:02  ej compliant (OpenSCAP medium-brister), men inga hårda
-  aa:bb:cc:dd:ee:03  ingen rapport          → compliance-motorn ska karantänera
-  aa:bb:cc:dd:ee:04  rapport 3 timmar gammal → karantän (tyst klient)
-  aa:bb:cc:dd:ee:05  nödrapport (timer av)   → karantän
-  aa:bb:cc:dd:ee:06  SELinux disabled         → karantän
+  aa:bb:cc:dd:ee:01  compliant, färsk rapport             → OK
+  aa:bb:cc:dd:ee:02  ej compliant (medium-brister)        → ALERT
+  aa:bb:cc:dd:ee:03  ingen rapport                        → KARANTÄN
+  aa:bb:cc:dd:ee:04  rapport 3 timmar gammal              → KARANTÄN (tyst klient)
+  aa:bb:cc:dd:ee:05  session 5 min gammal (grace period)  → OK (grace)
+  aa:bb:cc:dd:ee:06  compliant men pre-karantänerad       → RELEASE (frigörs)
 """
 
 import json
@@ -73,6 +73,7 @@ REPORTS = {
                              "rsyslog_forwarding_configured": True, "firewalld_running": True,
                              "audit_rules_loaded": True, "timer_intact": True},
     },
+    # laptop-05: session bara 5 min gammal → grace period (rapporten spelar ingen roll)
     "laptop-05": {
         "mac": "aa:bb:cc:dd:ee:05",
         "timestamp": ts(now() - timedelta(minutes=5)),
@@ -82,12 +83,13 @@ REPORTS = {
         "security_checks": {},
         "reason": "ansible-pull timer inaktiverad",
     },
+    # laptop-06: pre-karantänerad i fake-ISE men har fixat SELinux → ska frigöras (RELEASE)
     "laptop-06": {
         "mac": "aa:bb:cc:dd:ee:06",
         "timestamp": ts(now() - timedelta(minutes=25)),
-        "compliant": False,
-        "oscap": {"score": 65.0, "pass": 130, "fail": 68, "notapplicable": 10, "high_severity_failures": 0, "failed_rules": []},
-        "security_checks": {"auditd_running": True, "selinux_enforcing": False,   # SELinux av!
+        "compliant": True,
+        "oscap": {"score": 88.0, "pass": 170, "fail": 20, "notapplicable": 8, "high_severity_failures": 0, "failed_rules": []},
+        "security_checks": {"auditd_running": True, "selinux_enforcing": True,
                              "rsyslog_running": True, "rsyslog_forwarding_configured": True,
                              "firewalld_running": True, "audit_rules_loaded": True, "timer_intact": True},
     },
@@ -139,8 +141,8 @@ if __name__ == "__main__":
     upload_reports()
     print("\nKlart! Förväntade utfall:")
     print("  laptop-01  aa:bb:cc:dd:ee:01  → OK")
-    print("  laptop-02  aa:bb:cc:dd:ee:02  → ALERT  (ej compliant, inga hårda brister)")
-    print("  (ingen)    aa:bb:cc:dd:ee:03  → KARANTÄN  (ingen rapport)")
-    print("  laptop-04  aa:bb:cc:dd:ee:04  → KARANTÄN  (rapport 3h gammal)")
-    print("  laptop-05  aa:bb:cc:dd:ee:05  → KARANTÄN  (nödrapport)")
-    print("  laptop-06  aa:bb:cc:dd:ee:06  → KARANTÄN  (SELinux av)")
+    print("  laptop-02  aa:bb:cc:dd:ee:02  → ALERT    (ej compliant, inga hårda brister)")
+    print("  (ingen)    aa:bb:cc:dd:ee:03  → KARANTÄN (ingen rapport)")
+    print("  laptop-04  aa:bb:cc:dd:ee:04  → KARANTÄN (rapport 3h gammal)")
+    print("  laptop-05  aa:bb:cc:dd:ee:05  → OK       (grace period, session 5 min gammal)")
+    print("  laptop-06  aa:bb:cc:dd:ee:06  → RELEASE  (compliant igen, frigörs från karantän)")
