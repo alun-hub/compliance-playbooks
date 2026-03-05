@@ -7,6 +7,7 @@ Compliance-motorn har två nivåer av åtgärder:
 | Åtgärd | Effekt |
 |---|---|
 | **KARANTÄN** | Klienten placeras i karantän-VLAN via ISE ANC |
+| **FRIGÖR** | ISE ANC-policy tas bort automatiskt när en karantänerad klient åter är compliant |
 | **ALERT** | Händelsen loggas och hamnar i Grafana — ingen nätverksåtgärd |
 
 Logiken finns i `compliance-engine/engine/evaluator.py`.

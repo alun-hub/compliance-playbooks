@@ -157,6 +157,7 @@ Körs på en central server var 15:e minut. Korrelerar aktiva ISE-sessioner mot 
 
 | Tillstånd | Åtgärd | Motivering |
 |---|---|---|
+| Session < grace period | **OK** | Klienten har precis autentiserats och hinner inte ha skickat rapport ännu |
 | Ingen rapport i S3 | **Karantän** | Klienten har aldrig checkat in |
 | `emergency: true` i rapporten | **Karantän** | Compliance-timern har saboterats |
 | Rapport äldre än 90 min | **Karantän** | Klienten är tyst trots aktiv nätverkssession |
@@ -165,6 +166,7 @@ Körs på en central server var 15:e minut. Korrelerar aktiva ISE-sessioner mot 
 | rsyslog stoppad | **Karantän** | Central loggning utslagen |
 | rsyslog forwarding saknas | **Karantän** | Loggar når inte central plattform |
 | OpenSCAP high severity > 0 | **Karantän** | Kritisk säkerhetsbrist |
+| Åter compliant (var karantänerad) | **Frigör** | ISE ANC-policy tas bort automatiskt |
 | `compliant: false` (övriga) | **Alert** | Loggas men ingen nätverksåtgärd |
 | Allt OK | Ingenting | — |
 
@@ -309,7 +311,7 @@ PYTHONPATH=compliance-engine COMPLIANCE_CONFIG=test/config.yaml python3 -m engin
 # MinIO-konsol: http://localhost:9001  (minioadmin/minioadmin)
 ```
 
-Testmiljön innehåller 6 förkonfigurerade scenarier (1 OK, 1 Alert, 4 karantäner) via en fake-ISE som simulerar Cisco ISE ERS API.
+Testmiljön innehåller 7 förkonfigurerade scenarier via en fake-ISE som simulerar Cisco ISE ERS API: 1 OK, 1 Alert, 2 karantäner, 1 grace period, 1 auto-frigörning (RELEASE), plus den lokala maskinen.
 
 ---
 

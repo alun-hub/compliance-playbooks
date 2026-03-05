@@ -145,12 +145,11 @@ oscap_profile: xccdf_org.ssgproject.content_profile_cis_workstation_l1
 oscap_max_age_minutes: 1440
 ```
 
-Redigera `systemd/ansible-pull.service` — uppdatera git-URL:
+Git-URL:en konfigureras **inte** i `systemd/ansible-pull.service` utan i klienternas konfigurationsfil `/etc/fedora-compliance/client.conf` (distribueras via RPM-paketet):
 
 ```ini
-ExecStart=/usr/bin/ansible-pull \
-  --url https://git.intern.example.com/infra/compliance-playbooks.git \
-  ...
+COMPLIANCE_GIT_URL=https://git.intern.example.com/infra/compliance-playbooks.git
+COMPLIANCE_GIT_BRANCH=main
 ```
 
 Om repot kräver autentisering, konfigurera git credentials på klienterna
