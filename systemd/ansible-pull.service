@@ -6,10 +6,13 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=root
+EnvironmentFile=/etc/fedora-compliance/client.conf
 ExecStart=/usr/bin/ansible-pull \
-  --url https://git.example.com/compliance-playbooks.git \
+  --url ${COMPLIANCE_GIT_URL} \
+  --checkout ${COMPLIANCE_GIT_BRANCH} \
   --directory /etc/ansible/pull \
   --inventory localhost, \
+  --extra-vars @/etc/fedora-compliance/vars.yml \
   local.yml
 StandardOutput=journal
 StandardError=journal

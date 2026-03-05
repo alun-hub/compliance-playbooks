@@ -1,0 +1,17 @@
+---
+# /etc/fedora-compliance/vars.yml
+# Ansible-variabler för compliance-klienten.
+# Redigera dessa värden efter installation.
+
+# S3-bucket för compliance-rapporter
+s3_bucket: ert-compliance-bucket
+
+# OpenSCAP-profil
+oscap_profile: xccdf_org.ssgproject.content_profile_cis_workstation_l1
+oscap_max_age_minutes: 1440
+
+# Fyll i om ni använder on-prem S3 (MinIO, Ceph m.fl.)
+# s3_endpoint_url: https://minio.intern.example.com
+# s3_access_key: nyckel
+# s3_secret_key: hemlighet
+# s3_sse: false
