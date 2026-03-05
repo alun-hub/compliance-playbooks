@@ -153,22 +153,48 @@ aws s3api create-bucket --bucket <bucket-namn> \
   --endpoint-url https://s3.intern.example.com
 ```
 
-#### 2B.2 Skapa servicekonton
+#### 2B.2 Säkerhetsmodell — per-klient-credentials
 
-**MinIO**:
+Med en delad S3-nyckel för alla klienter kan en komprometterad klient skriva
+en falsk compliant rapport för en annan maskin och hålla den utanför karantän.
+Lösningen är samma som AWS IAM-modellen: **varje klient får ett unikt
+servicekonto** med en policy som bara tillåter skrivning till den egna sökvägen
+`compliance/<hostname>/`.
+
+Bootstrap-playbooken (`bootstrap.yml` med `s3_provider: onprem`) skapar
+servicekontona automatiskt och skriver unika credentials till
+`/etc/fedora-compliance/vars.yml` på varje klient.
+
+**Manuellt för MinIO** (om bootstrap inte används):
+
 ```bash
-# Skrivkonto för klienterna (begränsat till compliance/-prefixet)
-mc admin user add minio compliance-client <starkt-lösenord>
-mc admin policy attach minio readwrite --user compliance-client
-# Skapa en mer begränsad policy om möjligt — se MinIO-dokumentationen
+# Skapa policy-fil för en specifik klient (ersätt HOSTNAME och BUCKET)
+cat > /tmp/policy-laptop-01.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:PutObject"],
+    "Resource": ["arn:aws:s3:::BUCKET/compliance/laptop-01/*"]
+  }]
+}
+EOF
 
-# Läskonto för compliance-motorn
+mc admin policy create minio compliance-laptop-01 /tmp/policy-laptop-01.json
+mc admin user add minio compliance-laptop-01 <unikt-lösenord>
+mc admin policy attach minio compliance-laptop-01 --user compliance-laptop-01
+```
+
+Se `iac/minio-client-policy-template.json` för policy-mallen.
+
+**Läskonto för compliance-motorn** (ett konto räcker, behöver läsa alla):
+```bash
 mc admin user add minio compliance-engine <starkt-lösenord>
 mc admin policy attach minio readonly --user compliance-engine
 ```
 
-**NetApp / Ceph**: skapa S3-användare via respektive administratörsgränssnitt
-och notera access key och secret key för varje konto.
+**NetApp StorageGRID / Ceph RGW**: skapa per-klient S3-användare via
+respektive administratörsgränssnitt med motsvarande path-begränsning.
 
 #### 2B.3 Verifiera TLS
 

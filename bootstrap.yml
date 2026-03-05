@@ -5,6 +5,21 @@
 # Användning:
 #   ansible-playbook -i hosts bootstrap.yml
 #   eller via AWX job template mot ny klient-grupp
+#
+# Variabler:
+#   git_repo          URL till compliance-playbooks-repot
+#   git_branch        Branch att följa (default: main)
+#   s3_bucket         Bucket-namn
+#   s3_provider       "aws" (default) eller "onprem"
+#
+#   För s3_provider=onprem (MinIO/NetApp/Ceph):
+#   minio_alias       Alias konfigurerat i mc på bootstrap-servern (mc alias set ...)
+#   minio_endpoint    HTTPS-URL till S3-servern, t.ex. https://minio.intern.example.com
+#   s3_sse            true/false — false för on-prem utan KMS (default: false för onprem)
+#
+# Per-klient-credentials skapas automatiskt i MinIO och skrivs till
+# /etc/fedora-compliance/vars.yml på klienten. Varje klient får bara
+# skriva till compliance/<hostname>/ — inte till andra klienters sökvägar.
 
 - name: Bootstrap Fedora compliance-klient
   hosts: "{{ target_hosts | default('all') }}"
@@ -13,6 +28,7 @@
   vars:
     git_repo: "https://git.example.com/compliance-playbooks.git"
     git_branch: main
+    s3_provider: aws
 
   tasks:
     - name: Kontrollera att vi kör Fedora
@@ -26,8 +42,80 @@
           - ansible
           - git
           - python3-boto3
-          - awscli
+          - awscli2
         state: present
+
+    # --- On-prem S3: Skapa per-klient-servicekonto i MinIO ---
+    # Körs på bootstrap-servern (delegate_to: localhost).
+    # Kräver att mc är installerat och konfigurerat: mc alias set <minio_alias> ...
+    - name: Skapa per-klient MinIO-servicekonto
+      when: s3_provider == 'onprem'
+      block:
+        - name: Generera path-begränsad policy för klienten
+          copy:
+            content: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [{
+                  "Effect": "Allow",
+                  "Action": ["s3:PutObject"],
+                  "Resource": ["arn:aws:s3:::{{ s3_bucket }}/compliance/{{ ansible_hostname }}/*"]
+                }]
+              }
+            dest: /tmp/minio-policy-{{ ansible_hostname }}.json
+            mode: '0600'
+          delegate_to: localhost
+
+        - name: Registrera policy i MinIO
+          command: >
+            mc admin policy create {{ minio_alias }}
+            compliance-{{ ansible_hostname }}
+            /tmp/minio-policy-{{ ansible_hostname }}.json
+          delegate_to: localhost
+          failed_when: false  # Ignorera om policyn redan finns (idempotent)
+
+        - name: Generera unikt lösenord för klienten
+          set_fact:
+            client_s3_secret: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+
+        - name: Skapa MinIO-användare för klienten
+          command: >
+            mc admin user add {{ minio_alias }}
+            compliance-{{ ansible_hostname }}
+            {{ client_s3_secret }}
+          delegate_to: localhost
+
+        - name: Koppla policy till användaren
+          command: >
+            mc admin policy attach {{ minio_alias }}
+            compliance-{{ ansible_hostname }}
+            --user compliance-{{ ansible_hostname }}
+          delegate_to: localhost
+
+        - name: Skapa /etc/fedora-compliance/
+          file:
+            path: /etc/fedora-compliance
+            state: directory
+            mode: '0700'
+            owner: root
+
+        - name: Skriv per-klient S3-credentials till vars.yml
+          copy:
+            content: |
+              s3_bucket: {{ s3_bucket }}
+              s3_endpoint_url: {{ minio_endpoint }}
+              s3_access_key: "compliance-{{ ansible_hostname }}"
+              s3_secret_key: "{{ client_s3_secret }}"
+              s3_sse: false
+            dest: /etc/fedora-compliance/vars.yml
+            mode: '0600'
+            owner: root
+
+        - name: Rensa policy-fil från bootstrap-server
+          file:
+            path: /tmp/minio-policy-{{ ansible_hostname }}.json
+            state: absent
+          delegate_to: localhost
 
     - name: Skapa katalog för ansible-pull
       file:
