@@ -13,5 +13,8 @@ dependencies = [
     "psycopg2-binary>=2.9",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["engine"]
+
 [project.scripts]
 compliance-engine = "engine.main:main"
