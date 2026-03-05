@@ -178,11 +178,20 @@ I `compliance-engine/config.yaml`:
 ```yaml
 evaluation:
   # Hur gammal en rapport får vara innan karantän triggas.
-  # Bör vara minst 3x ansible-pull-intervallets längd (30 min * 3 = 90 min)
-  max_report_age_minutes: 90
+  # Bör vara minst 4× ansible-pull-intervallet för att tolerera enstaka
+  # S3-avbrott (3 retries per körning + en hel missad körning).
+  # Standard: 120 min (4 × 30 min)
+  max_report_age_minutes: 120
 
-  # Nyansluten klient får X minuter att leverera sin första rapport
-  # innan compliance-motorn agerar. Sätt högt om klienterna tar tid på sig
-  # att boota (OpenSCAP-scan tar 5-10 min vid första körning).
-  grace_period_minutes: 10
+  # Klient får X minuter efter autentisering innan rapport krävs.
+  # Bör matcha ansible-pull-intervallet + marginal för RandomizedDelaySec.
+  # Kritiskt för laptops som vaknar ur sleep och re-autentiseras via 802.1x
+  # — utan tillräcklig grace period karantäneras compliant laptops som
+  # öppnas mitt i ett compliance-motor-intervall.
+  # Standard: 40 min (30 min timer + 10 min marginal)
+  grace_period_minutes: 40
 ```
+
+> **Anpassa efter er miljö:** Om ansible-pull-timern kör oftare (t.ex. var 15:e min)
+> kan båda värdena sänkas proportionellt. Om klienter ofta är på instabila nät,
+> öka `max_report_age_minutes` snarare än att minska retries.

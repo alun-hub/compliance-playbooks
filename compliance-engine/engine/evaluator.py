@@ -34,8 +34,8 @@ def evaluate(
     sessions: list[Session],
     reports: dict[str, ComplianceReport],
     quarantined_macs: set[str],
-    max_report_age_minutes: float = 90,
-    grace_period_minutes: float = 10,
+    max_report_age_minutes: float = 120,
+    grace_period_minutes: float = 40,
 ) -> list[Verdict]:
     """
     För varje ISE-autentiserad session — bestäm åtgärd.

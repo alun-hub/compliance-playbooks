@@ -367,8 +367,8 @@ s3:
   # secret_key: "${S3_SECRET_KEY}"
 
 evaluation:
-  max_report_age_minutes: 90
-  grace_period_minutes: 10
+  max_report_age_minutes: 120   # 4× ansible-pull-intervallet; tolererar enstaka S3-avbrott
+  grace_period_minutes: 40      # Matchar ansible-pull-intervallet + marginal; viktigt för laptops
   quarantine_policy: Quarantine
 
 database:
@@ -526,12 +526,23 @@ Compliance-servern behöver nå:
 | ISE | 9060 | TCP/HTTPS | ERS API |
 | S3/MinIO | 443 | TCP/HTTPS | Hämta compliance-rapporter |
 
-Klienterna behöver nå:
+Klienter i **normalt VLAN** behöver nå:
 
 | Destination | Port | Protokoll | Syfte |
 |---|---|---|---|
 | Git-server | 443 | TCP/HTTPS | ansible-pull |
 | S3/MinIO | 443 | TCP/HTTPS | Pusha rapporter |
+
+Klienter i **karantän-VLAN** behöver nå (för självläkning):
+
+| Destination | Port | Protokoll | Syfte |
+|---|---|---|---|
+| Git-server | 443 | TCP/HTTPS | ansible-pull kan köra och fixa problemet |
+| S3/MinIO | 443 | TCP/HTTPS | Pusha ny compliant rapport |
+
+Utan dessa regler i karantän-VLAN kan klienten inte självläka. Den förblir karantänerad tills någon manuellt frigör den via ISE, oavsett om problemet är åtgärdat.
+
+Flödet för självläkning: klienten fixar problemet (t.ex. re-aktiverar SELinux) → ansible-pull körs inom 30 min → compliant rapport pushas till S3 → compliance-motorn ser compliant rapport + klient i karantän → RELEASE skickas automatiskt till ISE inom 15 min.
 
 ---
 

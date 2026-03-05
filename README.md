@@ -160,7 +160,7 @@ Körs på en central server var 15:e minut. Korrelerar aktiva ISE-sessioner mot 
 | Session < grace period | **OK** | Klienten har precis autentiserats och hinner inte ha skickat rapport ännu |
 | Ingen rapport i S3 | **Karantän** | Klienten har aldrig checkat in |
 | `emergency: true` i rapporten | **Karantän** | Compliance-timern har saboterats |
-| Rapport äldre än 90 min | **Karantän** | Klienten är tyst trots aktiv nätverkssession |
+| Rapport äldre än 120 min | **Karantän** | Klienten är tyst trots aktiv nätverkssession |
 | auditd stoppad | **Karantän** | Säkerhetsloggning utslagen |
 | SELinux ej Enforcing | **Karantän** | Mandatory access control utslagen |
 | rsyslog stoppad | **Karantän** | Central loggning utslagen |

@@ -9,8 +9,12 @@ s3:
   prefix: compliance/
 
 evaluation:
-  max_report_age_minutes: 90    # Hela rapporten äldre än detta = karantän (klienten tyst)
-  grace_period_minutes: 10      # Nyansluten klient får X min innan vi kräver rapport
+  max_report_age_minutes: 120   # Rapport äldre än detta = karantän (klienten tyst)
+                                # Bör vara minst 4× ansible-pull-intervallet (4×30=120 min)
+                                # för att tolerera enstaka S3-avbrott
+  grace_period_minutes: 40      # Klient får X min efter autentisering innan rapport krävs
+                                # Bör matcha ansible-pull-intervallet + marginal (30+10=40 min)
+                                # Viktigt för laptops som vaknar ur sleep och re-autentiseras
   quarantine_policy: Quarantine # ANC-policyns namn i ISE
 
 # PostgreSQL för Grafana-visualisering (valfritt - utelämna för att hoppa över)

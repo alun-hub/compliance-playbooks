@@ -45,5 +45,9 @@
       environment:
         AWS_ACCESS_KEY_ID: "{{ s3_access_key | default(omit) }}"
         AWS_SECRET_ACCESS_KEY: "{{ s3_secret_key | default(omit) }}"
+      register: emergency_push
+      retries: 3
+      delay: 15
+      until: emergency_push.rc == 0
       failed_when: false
   when: not ansible_timer_active

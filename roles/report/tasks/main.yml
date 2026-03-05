@@ -58,9 +58,12 @@
     AWS_ACCESS_KEY_ID: "{{ s3_access_key | default(omit) }}"
     AWS_SECRET_ACCESS_KEY: "{{ s3_secret_key | default(omit) }}"
   register: s3_push
+  retries: 3
+  delay: 15
+  until: s3_push.rc == 0
   failed_when: false  # Logga fel men stoppa inte körningen
 
-- name: Varna om S3-push misslyckades
+- name: Varna om S3-push misslyckades efter alla försök
   debug:
-    msg: "VARNING: Kunde inte pusha rapport till S3: {{ s3_push.stderr }}"
+    msg: "VARNING: Kunde inte pusha rapport till S3 efter 3 försök: {{ s3_push.stderr }}"
   when: s3_push.rc != 0
