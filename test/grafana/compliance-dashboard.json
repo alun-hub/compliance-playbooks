@@ -10,132 +10,286 @@
   "title": "Fedora Compliance",
   "uid": "fedora-compliance",
   "refresh": "5m",
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "title": "Aktiva sessioner",
       "type": "stat",
-      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
-      "options": { "colorMode": "background" },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes'",
-        "format": "table"
-      }]
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^value$/",
+          "values": false
+        },
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes'",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 2,
       "title": "Compliant",
       "type": "stat",
-      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
-      "options": { "colorMode": "background" },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^value$/",
+          "values": false
+        },
+        "graphMode": "none"
+      },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "steps": [
-              { "color": "red", "value": 0 },
-              { "color": "green", "value": 1 }
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           }
         }
       },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'ok'",
-        "format": "table"
-      }]
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'ok'",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 3,
       "title": "Alert",
       "type": "stat",
-      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
-      "options": { "colorMode": "background" },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^value$/",
+          "values": false
+        },
+        "graphMode": "none"
+      },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "steps": [
-              { "color": "green", "value": 0 },
-              { "color": "yellow", "value": 1 }
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
             ]
           }
         }
       },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'alert'",
-        "format": "table"
-      }]
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'alert'",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 4,
-      "title": "Karantänerade",
+      "title": "Karant\u00e4nerade",
       "type": "stat",
-      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
-      "options": { "colorMode": "background" },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^value$/",
+          "values": false
+        },
+        "graphMode": "none"
+      },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "steps": [
-              { "color": "green", "value": 0 },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           }
         }
       },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'quarantine'",
-        "format": "table"
-      }]
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'quarantine'",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 5,
       "title": "Genomsnittlig OpenSCAP-score (senaste dygnet)",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT date_trunc('hour', checked_at) AS time, AVG(oscap_score) AS \"Snitt-score\", MIN(oscap_score) AS \"Lägsta score\" FROM compliance_status WHERE checked_at > now() - interval '24 hours' AND oscap_score IS NOT NULL GROUP BY 1 ORDER BY 1",
-        "format": "time_series"
-      }]
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT date_trunc('hour', checked_at) AS time, AVG(oscap_score) AS \"Snitt-score\", MIN(oscap_score) AS \"L\u00e4gsta score\" FROM compliance_status WHERE checked_at > now() - interval '24 hours' AND oscap_score IS NOT NULL GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 6,
       "title": "Ej compliant klienter",
       "type": "table",
-      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 10 },
-      "options": {
-        "sortBy": [{ "displayName": "Åtgärd", "desc": true }]
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 10
       },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT DISTINCT ON (mac_address) checked_at AS \"Tid\", hostname AS \"Värdnamn\", mac_address AS \"MAC\", username AS \"Användare\", nas_ip AS \"Switch\", action AS \"Åtgärd\", reason AS \"Anledning\", oscap_score AS \"SCAP-score\", high_severity AS \"Kritiska brister\" FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action != 'ok' ORDER BY mac_address, checked_at DESC",
-        "format": "table"
-      }]
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "\u00c5tg\u00e4rd",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT DISTINCT ON (mac_address) checked_at AS \"Tid\", hostname AS \"V\u00e4rdnamn\", mac_address AS \"MAC\", username AS \"Anv\u00e4ndare\", nas_ip AS \"Switch\", action AS \"\u00c5tg\u00e4rd\", reason AS \"Anledning\", oscap_score AS \"SCAP-score\", high_severity AS \"Kritiska brister\" FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action != 'ok' ORDER BY mac_address, checked_at DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 7,
-      "title": "Säkerhetskontroller (senaste körning)",
+      "title": "S\u00e4kerhetskontroller (senaste k\u00f6rning)",
       "type": "table",
-      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT DISTINCT ON (mac_address) hostname AS \"Värdnamn\", auditd_ok AS \"auditd\", selinux_ok AS \"SELinux\", rsyslog_ok AS \"rsyslog\", oscap_score AS \"SCAP-score\", report_age_min AS \"Rapportålder (min)\" FROM compliance_status WHERE checked_at > now() - interval '20 minutes' ORDER BY mac_address, checked_at DESC",
-        "format": "table"
-      }]
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT DISTINCT ON (mac_address) hostname AS \"V\u00e4rdnamn\", auditd_ok AS \"auditd\", selinux_ok AS \"SELinux\", rsyslog_ok AS \"rsyslog\", oscap_score AS \"SCAP-score\", report_age_min AS \"Rapport\u00e5lder (min)\" FROM compliance_status WHERE checked_at > now() - interval '20 minutes' ORDER BY mac_address, checked_at DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 8,
-      "title": "Karantänhistorik (7 dagar)",
+      "title": "Karant\u00e4nhistorik (7 dagar)",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 30, "w": 24, "h": 8 },
-      "targets": [{
-        "datasource": {"type": "postgres", "uid": "compliance-pg"},
-        "rawSql": "SELECT date_trunc('hour', checked_at) AS time, COUNT(*) FILTER (WHERE action = 'quarantine') AS \"Karantäner\", COUNT(*) FILTER (WHERE action = 'alert') AS \"Alerts\" FROM compliance_status WHERE checked_at > now() - interval '7 days' GROUP BY 1 ORDER BY 1",
-        "format": "time_series"
-      }]
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "compliance-pg"
+          },
+          "rawSql": "SELECT date_trunc('hour', checked_at) AS time, COUNT(*) FILTER (WHERE action = 'quarantine') AS \"Karant\u00e4ner\", COUNT(*) FILTER (WHERE action = 'alert') AS \"Alerts\" FROM compliance_status WHERE checked_at > now() - interval '7 days' GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }
