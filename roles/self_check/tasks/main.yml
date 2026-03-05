@@ -11,6 +11,7 @@
 - name: Sätt timer-status
   set_fact:
     ansible_timer_active: "{{ timer_check.status.ActiveState | default('inactive') == 'active' }}"
+    compliance_emergency: "{{ timer_check.status.ActiveState | default('inactive') != 'active' }}"
 
 - name: Kontrollera att git-repot är intakt (ej manipulerat)
   command: git -C /etc/ansible/pull rev-parse HEAD
@@ -41,7 +42,7 @@
         aws s3 cp /tmp/compliance-report.json
         s3://{{ s3_bucket }}/compliance/{{ ansible_hostname }}/latest.json
         {% if s3_endpoint_url is defined %}--endpoint-url {{ s3_endpoint_url }}{% endif %}
-        {% if s3_sse | default(true) %}--sse aws:kms{% endif %}
+        {% if s3_sse | default(true) | bool %}--sse aws:kms{% endif %}
       environment:
         AWS_ACCESS_KEY_ID: "{{ s3_access_key | default(omit) }}"
         AWS_SECRET_ACCESS_KEY: "{{ s3_secret_key | default(omit) }}"

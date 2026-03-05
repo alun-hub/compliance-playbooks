@@ -1,14 +1,20 @@
 ---
-- name: Samla primär MAC-adress
+- name: Samla MAC-adress för det interface som kopplar mot nätverket
   shell: |
-    ip -j link show | python3 -c "
-    import json, sys
-    links = json.load(sys.stdin)
+    # Använd interfacet med default-route — det är det ISE autentiserar.
+    # Undviker fel MAC vid laptops med både WiFi och Ethernet.
+    IFACE=$(ip route show default | awk 'NR==1 {for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')
+    if [ -z "$IFACE" ]; then
+      # Fallback: första ethernet-interface om ingen default-route finns
+      IFACE=$(ip -j link show | python3 -c "
+    import json,sys
+    links=json.load(sys.stdin)
     for l in links:
-        if l.get('link_type') == 'ether' and 'lo' not in l['ifname']:
-            print(l['address'])
-            break
-    "
+        if l.get('link_type')=='ether' and 'lo' not in l['ifname']:
+            print(l['ifname']); break
+    ")
+    fi
+    cat /sys/class/net/${IFACE}/address
   register: mac_address
   changed_when: false
 
@@ -20,6 +26,7 @@
       fqdn: "{{ ansible_fqdn }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
       mac_address: "{{ mac_address.stdout | trim }}"
+      emergency: "{{ compliance_emergency | default(false) | bool }}"
       os:
         distribution: "{{ ansible_distribution }}"
         version: "{{ ansible_distribution_version }}"
@@ -34,6 +41,7 @@
       security_checks: "{{ security_checks }}"
       compliant: >-
         {{
+          not (compliance_emergency | default(false) | bool) and
           oscap_results.high_severity_failures == 0 and
           security_checks.auditd_running and
           security_checks.selinux_enforcing and
@@ -53,7 +61,7 @@
     aws s3 cp /tmp/compliance-report.json
     s3://{{ s3_bucket }}/compliance/{{ ansible_hostname }}/latest.json
     {% if s3_endpoint_url is defined %}--endpoint-url {{ s3_endpoint_url }}{% endif %}
-    {% if s3_sse | default(true) %}--sse aws:kms{% endif %}
+    {% if s3_sse | default(true) | bool %}--sse aws:kms{% endif %}
   environment:
     AWS_ACCESS_KEY_ID: "{{ s3_access_key | default(omit) }}"
     AWS_SECRET_ACCESS_KEY: "{{ s3_secret_key | default(omit) }}"

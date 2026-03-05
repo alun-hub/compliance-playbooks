@@ -10,7 +10,7 @@ import sys
 import yaml
 
 from .db import ComplianceDB
-from .evaluator import Action, Verdict, evaluate
+from .evaluator import Action, evaluate
 from .ise import ISEClient
 from .s3 import S3ReportStore
 

@@ -58,10 +58,16 @@ def active_sessions():
 
 
 @app.get("/ers/config/ancendpoint")
-def list_anc_endpoints():
-    """Returnerar alla endpoints som har ANC-policy applicerad."""
-    resources = [{"id": mac} for mac in quarantined]
-    log.info("GET ancendpoint → %d karantänerade", len(resources))
+def list_anc_endpoints(filter: str = ""):
+    """Returnerar endpoints med ANC-policy. Stödjer filter=policyName.EQ.<policy>."""
+    if filter.startswith("policyName.EQ."):
+        policy_filter = filter.split("policyName.EQ.", 1)[1]
+        filtered = {mac: pol for mac, pol in quarantined.items() if pol == policy_filter}
+    else:
+        filtered = quarantined
+
+    resources = [{"id": mac} for mac in filtered]
+    log.info("GET ancendpoint filter=%r → %d karantänerade", filter, len(resources))
     return JSONResponse({
         "SearchResult": {
             "total": len(resources),

@@ -107,14 +107,20 @@ class ISEClient:
             return False
 
     def get_quarantined_macs(self, policy: str = "Quarantine") -> set[str]:
-        """Hämtar MAC-adresser som för närvarande har ANC-policy applicerad i ISE."""
+        """
+        Hämtar MAC-adresser som har ANC-policy 'policy' applicerad i ISE.
+
+        ISE ERS /ancendpoint stödjer filter på policyName vilket begränsar
+        resultatet till rätt policy och undviker att klienter på andra
+        ANC-policys (t.ex. SoftQuarantine) felaktigt frigörs.
+        """
         macs = set()
         page = 1
 
         while True:
             resp = self.session.get(
                 f"{self.base}/config/ancendpoint",
-                params={"size": 100, "page": page},
+                params={"size": 100, "page": page, "filter": f"policyName.EQ.{policy}"},
                 timeout=30,
             )
             resp.raise_for_status()
@@ -122,6 +128,8 @@ class ISEClient:
             resources = data.get("resources", [])
 
             for r in resources:
+                # I ISE ERS är endpoint-id MAC-adressen (format: aa:bb:cc:dd:ee:ff
+                # eller AA-BB-CC-DD-EE-FF beroende på ISE-version)
                 mac = r.get("id", "").lower().replace("-", ":")
                 if mac:
                     macs.add(mac)
@@ -130,7 +138,7 @@ class ISEClient:
                 break
             page += 1
 
-        log.info("Hämtade %d karantänerade MAC-adresser från ISE", len(macs))
+        log.info("Hämtade %d MAC-adresser med ANC-policy '%s' från ISE", len(macs), policy)
         return macs
 
     def release_quarantine(self, mac_address: str, policy: str = "Quarantine") -> bool:

@@ -117,50 +117,39 @@
             state: absent
           delegate_to: localhost
 
-    - name: Skapa katalog för ansible-pull
+    - name: Skapa katalog för konfiguration
+      file:
+        path: /etc/fedora-compliance
+        state: directory
+        mode: '0700'
+        owner: root
+
+    - name: Skapa katalog för ansible-pull checkout
       file:
         path: /etc/ansible/pull
         state: directory
         mode: '0700'
         owner: root
 
+    - name: Installera client.conf med git-URL
+      copy:
+        dest: /etc/fedora-compliance/client.conf
+        content: |
+          COMPLIANCE_GIT_URL={{ git_repo }}
+          COMPLIANCE_GIT_BRANCH={{ git_branch }}
+        mode: '0600'
+        owner: root
+
     - name: Installera systemd service-fil
       copy:
+        src: "{{ playbook_dir }}/systemd/ansible-pull.service"
         dest: /etc/systemd/system/ansible-pull.service
-        content: |
-          [Unit]
-          Description=Ansible compliance pull
-          After=network-online.target
-          Wants=network-online.target
-
-          [Service]
-          Type=oneshot
-          User=root
-          ExecStart=/usr/bin/ansible-pull \
-            --url {{ git_repo }} \
-            --checkout {{ git_branch }} \
-            --directory /etc/ansible/pull \
-            --inventory localhost, \
-            local.yml
-          StandardOutput=journal
-          StandardError=journal
-          SyslogIdentifier=ansible-pull
         mode: '0644'
 
     - name: Installera systemd timer-fil
       copy:
+        src: "{{ playbook_dir }}/systemd/ansible-pull.timer"
         dest: /etc/systemd/system/ansible-pull.timer
-        content: |
-          [Unit]
-          Description=Ansible compliance pull timer
-
-          [Timer]
-          OnBootSec=5min
-          OnUnitActiveSec=30min
-          RandomizedDelaySec=5min
-
-          [Install]
-          WantedBy=timers.target
         mode: '0644'
 
     - name: Ladda om systemd

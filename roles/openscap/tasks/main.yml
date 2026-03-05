@@ -7,6 +7,13 @@
       - python3
     state: present
 
+- name: Skapa katalog för SCAP-resultat
+  file:
+    path: "{{ oscap_result_file | dirname }}"
+    state: directory
+    mode: '0700'
+    owner: root
+
 - name: Kontrollera ålder på tidigare resultat
   stat:
     path: "{{ oscap_result_file }}"
