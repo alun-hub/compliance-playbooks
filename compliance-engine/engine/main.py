@@ -44,11 +44,16 @@ def run(config: dict) -> dict:
         username=ise_cfg["username"],
         password=ise_cfg["password"],
         verify_ssl=ise_cfg.get("verify_ssl", True),
+        port=ise_cfg.get("port", 9060),
+        scheme=ise_cfg.get("scheme", "https"),
     )
 
     store = S3ReportStore(
         bucket=s3_cfg["bucket"],
         prefix=s3_cfg.get("prefix", "compliance/"),
+        endpoint_url=s3_cfg.get("endpoint_url"),
+        access_key=s3_cfg.get("access_key"),
+        secret_key=s3_cfg.get("secret_key"),
     )
 
     sessions = ise.get_active_sessions()

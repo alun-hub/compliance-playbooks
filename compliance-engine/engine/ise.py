@@ -25,8 +25,9 @@ class Session:
 
 
 class ISEClient:
-    def __init__(self, host: str, username: str, password: str, verify_ssl: bool = True):
-        self.base = f"https://{host}:9060/ers"
+    def __init__(self, host: str, username: str, password: str, verify_ssl: bool = True,
+                 port: int = 9060, scheme: str = "https"):
+        self.base = f"{scheme}://{host}:{port}/ers"
         self.session = requests.Session()
         self.session.auth = (username, password)
         self.session.headers.update({

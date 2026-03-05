@@ -1,0 +1,23 @@
+ise:
+  host: localhost
+  port: 9060
+  scheme: http
+  username: admin
+  password: admin
+  verify_ssl: false
+
+s3:
+  bucket: compliance
+  endpoint_url: http://localhost:9000
+  access_key: minioadmin
+  secret_key: minioadmin
+
+evaluation:
+  max_report_age_minutes: 90
+  grace_period_minutes: 10
+  quarantine_policy: Quarantine
+
+database:
+  dsn: "postgresql://compliance:compliance@localhost/compliance"
+
+dry_run: false

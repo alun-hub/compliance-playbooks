@@ -29,10 +29,17 @@ class ComplianceReport:
 
 
 class S3ReportStore:
-    def __init__(self, bucket: str, prefix: str = "compliance/"):
+    def __init__(self, bucket: str, prefix: str = "compliance/", endpoint_url: str = None,
+                 access_key: str = None, secret_key: str = None):
         self.bucket = bucket
         self.prefix = prefix
-        self.client = boto3.client("s3")
+        kwargs = {}
+        if endpoint_url:
+            kwargs["endpoint_url"] = endpoint_url
+        if access_key and secret_key:
+            kwargs["aws_access_key_id"] = access_key
+            kwargs["aws_secret_access_key"] = secret_key
+        self.client = boto3.client("s3", **kwargs)
 
     def load_all(self) -> dict[str, ComplianceReport]:
         """
