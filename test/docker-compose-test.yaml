@@ -32,3 +32,18 @@ services:
     build: ./fake-ise
     ports:
       - "9060:9060"
+
+  grafana:
+    image: docker.io/grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - ./grafana/compliance-dashboard.json:/var/lib/grafana/dashboards/compliance.json:ro,z
+    depends_on:
+      postgres:
+        condition: service_healthy

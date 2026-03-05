@@ -1,0 +1,14 @@
+apiVersion: 1
+datasources:
+  - name: Compliance DB
+    type: postgres
+    uid: compliance-pg
+    url: postgres:5432
+    user: compliance
+    secureJsonData:
+      password: compliance
+    jsonData:
+      database: compliance
+      sslmode: disable
+      postgresVersion: 1600
+    isDefault: true
