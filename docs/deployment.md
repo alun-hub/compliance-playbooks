@@ -61,7 +61,14 @@ ISE sköter resten automatiskt när ANC-policyn appliceras.
 
 ## Steg 2 — S3-bucket
 
-### 2.1 Skapa bucket
+Systemet stödjer AWS S3 och alla S3-kompatibla lagringslösningar (MinIO,
+NetApp StorageGRID, Ceph RGW m.fl.). Följ det spår som passar er miljö.
+
+---
+
+### Spår A — AWS S3
+
+#### 2A.1 Skapa bucket
 
 ```bash
 aws s3api create-bucket \
@@ -70,7 +77,7 @@ aws s3api create-bucket \
   --create-bucket-configuration LocationConstraint=eu-north-1
 ```
 
-### 2.2 Aktivera versionshantering (rekommenderat)
+#### 2A.2 Aktivera versionshantering (rekommenderat)
 
 ```bash
 aws s3api put-bucket-versioning \
@@ -78,7 +85,7 @@ aws s3api put-bucket-versioning \
   --versioning-configuration Status=Enabled
 ```
 
-### 2.3 Sätt bucket-policy
+#### 2A.3 Sätt bucket-policy
 
 Ersätt `BUCKET_NAME` i `iac/s3-bucket-policy.json` och applicera:
 
@@ -89,14 +96,14 @@ aws s3api put-bucket-policy --bucket <bucket-namn> --policy file:///tmp/bp.json
 
 Bucket-policyn kräver KMS-kryptering och TLS på alla anrop.
 
-### 2.4 Skapa KMS-nyckel
+#### 2A.4 Skapa KMS-nyckel
 
 ```bash
 aws kms create-key --description "Compliance reports"
 # Notera KeyId i svaret
 ```
 
-### 2.5 Skapa IAM-policy och roll för klienter
+#### 2A.5 Skapa IAM-policy och roll för klienter
 
 Ersätt `BUCKET_NAME` i `iac/iam-client-policy.json`:
 
@@ -113,13 +120,67 @@ använd IAM Identity Center för on-prem-klienter med `aws configure sso`.
 Tagga varje klient-roll med `hostname`-taggen som matchar maskinens hostname
 — det begränsar varje klient till att bara skriva sin egna rapport.
 
-### 2.6 Skapa IAM-policy för compliance-motorn
+#### 2A.6 Skapa IAM-policy för compliance-motorn
 
 ```bash
 sed 's/BUCKET_NAME/<bucket-namn>/g' iac/iam-engine-policy.json > /tmp/ep.json
 aws iam create-policy \
   --policy-name FedoraComplianceEngineRead \
   --policy-document file:///tmp/ep.json
+```
+
+---
+
+### Spår B — On-prem S3 (MinIO, NetApp StorageGRID, Ceph RGW m.fl.)
+
+Principerna är desamma oavsett produkt: skapa en bucket, ett skrivkonto
+för klienter och ett läskonto för compliance-motorn. Alla anrop ska gå
+över TLS — konfigurera ett giltigt certifikat på S3-servern.
+
+#### 2B.1 Skapa bucket
+
+**MinIO** (via `mc`-klienten):
+```bash
+mc alias set minio https://minio.intern.example.com minioadmin minioadmin
+mc mb minio/<bucket-namn>
+mc version enable minio/<bucket-namn>   # versionshantering (rekommenderat)
+```
+
+**NetApp StorageGRID / Ceph RGW**: skapa bucket via respektive webbkonsol
+eller med AWS CLI och `--endpoint-url`:
+```bash
+aws s3api create-bucket --bucket <bucket-namn> \
+  --endpoint-url https://s3.intern.example.com
+```
+
+#### 2B.2 Skapa servicekonton
+
+**MinIO**:
+```bash
+# Skrivkonto för klienterna (begränsat till compliance/-prefixet)
+mc admin user add minio compliance-client <starkt-lösenord>
+mc admin policy attach minio readwrite --user compliance-client
+# Skapa en mer begränsad policy om möjligt — se MinIO-dokumentationen
+
+# Läskonto för compliance-motorn
+mc admin user add minio compliance-engine <starkt-lösenord>
+mc admin policy attach minio readonly --user compliance-engine
+```
+
+**NetApp / Ceph**: skapa S3-användare via respektive administratörsgränssnitt
+och notera access key och secret key för varje konto.
+
+#### 2B.3 Verifiera TLS
+
+```bash
+# Kontrollera att certifikatet är giltigt och betrodd av klienterna
+curl -v https://s3.intern.example.com/<bucket-namn>/ 2>&1 | grep -E "SSL|TLS|issuer"
+```
+
+Om er CA är intern, distribuera CA-certifikatet till klienterna:
+```bash
+cp intern-ca.crt /etc/pki/ca-trust/source/anchors/
+update-ca-trust
 ```
 
 ---
@@ -137,12 +198,23 @@ git push -u origin main
 
 ### 3.2 Anpassa konfigurationen
 
-Redigera `group_vars/all.yml`:
+Redigera `group_vars/all.yml` med bucket-namn och OpenSCAP-profil:
 
 ```yaml
 s3_bucket: ert-compliance-bucket
 oscap_profile: xccdf_org.ssgproject.content_profile_cis_workstation_l1
 oscap_max_age_minutes: 1440
+```
+
+**On-prem S3** — lägg även till endpoint och credentials. Dessa kan sättas
+i `group_vars/all.yml` (gäller alla klienter) eller overridas per klient i
+`/etc/fedora-compliance/vars.yml`:
+
+```yaml
+s3_endpoint_url: https://minio.intern.example.com
+s3_access_key: compliance-client
+s3_secret_key: <lösenord>
+s3_sse: false   # SSE-KMS är AWS-specifikt; sätt false för on-prem
 ```
 
 Git-URL:en konfigureras **inte** i `systemd/ansible-pull.service` utan i klienternas konfigurationsfil `/etc/fedora-compliance/client.conf` (distribueras via RPM-paketet):
@@ -182,23 +254,35 @@ laptop-002.intern.example.com
 workstation-010.intern.example.com
 ```
 
-### 4.2 Konfigurera AWS-credentials på klienterna
+### 4.2 Konfigurera S3-credentials på klienterna
 
-Klienterna behöver kunna anropa S3. Alternativen:
+Klienterna behöver kunna skriva till S3-bucketen. Credentials-hanteringen
+skiljer sig beroende på lagringslösning.
 
-**Alternativ A — IAM Instance Profile (AWS)**
+**AWS S3 — Alternativ A: IAM Instance Profile**
 Koppla IAM-rollen direkt till EC2-instansen. Kräver ingen konfiguration på klienten.
 
-**Alternativ B — aws configure på varje klient**
+**AWS S3 — Alternativ B: IAM Identity Center (SSO)**
+Lämpligt för on-prem-klienter med federation mot AD/LDAP via `aws configure sso`.
+
+**AWS S3 — Alternativ C: statiska nycklar**
 ```bash
-# Körs som en task i bootstrap.yml eller manuellt
 aws configure set aws_access_key_id <nyckel>
 aws configure set aws_secret_access_key <hemlighet>
 aws configure set region eu-north-1
 ```
 
-**Alternativ C — IAM Identity Center (SSO)**
-Lämpligt för on-prem med federation mot AD/LDAP.
+**On-prem S3 (MinIO/NetApp/Ceph) — statiska nycklar via vars.yml**
+Lägg credentials i `/etc/fedora-compliance/vars.yml` på varje klient
+(distribueras via bootstrap-playbooken eller RPM + konfigurationshantering):
+```yaml
+s3_endpoint_url: https://minio.intern.example.com
+s3_access_key: compliance-client
+s3_secret_key: <lösenord>
+s3_sse: false
+```
+Dessa variabler läses av Ansible-rollerna och skickas till `aws s3 cp`
+— ingen global `aws configure` behövs.
 
 ### 4.3 Kör bootstrap-playbooken
 
@@ -223,8 +307,15 @@ Bootstrap-playbooken:
 ### 4.4 Verifiera att klienter rapporterar
 
 ```bash
-# Kontrollera S3 att rapporter har börjat komma in
+# Kontrollera S3 att rapporter har börjat komma in (AWS)
 aws s3 ls s3://<bucket-namn>/compliance/ --recursive | sort -k1,2
+
+# On-prem — lägg till --endpoint-url
+aws s3 ls s3://<bucket-namn>/compliance/ --recursive \
+  --endpoint-url https://minio.intern.example.com \
+  --no-sign-request 2>/dev/null || \
+aws s3 ls s3://<bucket-namn>/compliance/ --recursive \
+  --endpoint-url https://minio.intern.example.com
 
 # Kontrollera att timern är aktiv på en klient
 ssh root@laptop-001 systemctl status ansible-pull.timer
@@ -270,6 +361,10 @@ ise:
 
 s3:
   bucket: ert-compliance-bucket
+  # On-prem S3 — ta bort raderna nedan för AWS:
+  # endpoint_url: https://minio.intern.example.com
+  # access_key: compliance-engine
+  # secret_key: "${S3_SECRET_KEY}"
 
 evaluation:
   max_report_age_minutes: 90
@@ -443,8 +538,10 @@ Klienterna behöver nå:
 ## Steg 9 — Verifiera hela kedjan
 
 ```bash
-# 1. Kontrollera att en klient har skickat rapport
+# 1. Kontrollera att en klient har skickat rapport (AWS)
 aws s3 ls s3://<bucket>/compliance/ --recursive
+# On-prem:
+# aws s3 ls s3://<bucket>/compliance/ --recursive --endpoint-url https://minio.intern.example.com
 
 # 2. Kör compliance-motorn manuellt och kontrollera utdata
 systemctl start compliance-engine.service
