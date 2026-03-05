@@ -25,6 +25,7 @@ log = logging.getLogger("fake-ise")
 app = FastAPI(title="Fake Cisco ISE ERS API")
 
 SESSIONS = [
+    {"callingStationId": "56-F7-B5-84-DE-AE", "userName": "alun",   "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/0"},
     {"callingStationId": "AA-BB-CC-DD-EE-01", "userName": "alice",   "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/1"},
     {"callingStationId": "AA-BB-CC-DD-EE-02", "userName": "bob",     "nasIpAddress": "10.0.0.1", "nasPortId": "GigabitEthernet1/0/2"},
     {"callingStationId": "AA-BB-CC-DD-EE-03", "userName": "carol",   "nasIpAddress": "10.0.0.2", "nasPortId": "GigabitEthernet1/0/1"},
