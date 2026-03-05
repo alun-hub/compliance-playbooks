@@ -2,6 +2,13 @@
 
 Centralt system för att övervaka och verifiera att en stor installationsbas av Fedora-klienter är korrekt konfigurerade och härdade. Klienter som inte uppfyller säkerhetskraven eller slutar rapportera karantäneras automatiskt från nätverket.
 
+## Dokumentation
+
+| Dokument | Innehåll |
+|---|---|
+| [docs/deployment.md](docs/deployment.md) | Komplett steg-för-steg för driftsättning i produktion |
+| [docs/compliance-tuning.md](docs/compliance-tuning.md) | Justera karantänregler, skippa OpenSCAP-regler, tailoring-filer |
+
 ## Bakgrund och mål
 
 I en stor miljö med många Fedora-klienter är det svårt att garantera att säkerhetskonfigurationer förblir intakta. En användare eller ett intrång kan stänga av `auditd`, sätta SELinux i permissive-läge eller stoppa loggvidebefordran - utan att det märks centralt. Det räcker inte att konfigurera klienterna rätt en gång; de måste kontinuerligt verifiera sig själva och rapportera sin status.
