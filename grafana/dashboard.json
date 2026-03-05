@@ -1,0 +1,141 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRES",
+      "label": "Compliance DB",
+      "type": "datasource",
+      "pluginId": "postgres"
+    }
+  ],
+  "title": "Fedora Compliance",
+  "uid": "fedora-compliance",
+  "refresh": "5m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Aktiva sessioner",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "options": { "colorMode": "background" },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes'",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "Compliant",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "options": { "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'ok'",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "Alert",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "options": { "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'alert'",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "Karantänerade",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "options": { "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT COUNT(DISTINCT mac_address) AS value FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action = 'quarantine'",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "Genomsnittlig OpenSCAP-score (senaste dygnet)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT date_trunc('hour', checked_at) AS time, AVG(oscap_score) AS \"Snitt-score\", MIN(oscap_score) AS \"Lägsta score\" FROM compliance_status WHERE checked_at > now() - interval '24 hours' AND oscap_score IS NOT NULL GROUP BY 1 ORDER BY 1",
+        "format": "time_series"
+      }]
+    },
+    {
+      "id": 6,
+      "title": "Ej compliant klienter",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 10 },
+      "options": {
+        "sortBy": [{ "displayName": "Åtgärd", "desc": true }]
+      },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT DISTINCT ON (mac_address) checked_at AS \"Tid\", hostname AS \"Värdnamn\", mac_address AS \"MAC\", username AS \"Användare\", nas_ip AS \"Switch\", action AS \"Åtgärd\", reason AS \"Anledning\", oscap_score AS \"SCAP-score\", high_severity AS \"Kritiska brister\" FROM compliance_status WHERE checked_at > now() - interval '20 minutes' AND action != 'ok' ORDER BY mac_address, checked_at DESC",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 7,
+      "title": "Säkerhetskontroller (senaste körning)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT DISTINCT ON (mac_address) hostname AS \"Värdnamn\", auditd_ok AS \"auditd\", selinux_ok AS \"SELinux\", rsyslog_ok AS \"rsyslog\", oscap_score AS \"SCAP-score\", report_age_min AS \"Rapportålder (min)\" FROM compliance_status WHERE checked_at > now() - interval '20 minutes' ORDER BY mac_address, checked_at DESC",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 8,
+      "title": "Karantänhistorik (7 dagar)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 30, "w": 24, "h": 8 },
+      "targets": [{
+        "datasource": "${DS_POSTGRES}",
+        "rawSql": "SELECT date_trunc('hour', checked_at) AS time, COUNT(*) FILTER (WHERE action = 'quarantine') AS \"Karantäner\", COUNT(*) FILTER (WHERE action = 'alert') AS \"Alerts\" FROM compliance_status WHERE checked_at > now() - interval '7 days' GROUP BY 1 ORDER BY 1",
+        "format": "time_series"
+      }]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+[Unit]
+Description=Fedora compliance engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=compliance
+EnvironmentFile=/etc/compliance-engine/secrets.env
+ExecStart=/opt/compliance-engine/bin/compliance-engine
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=compliance-engine
+
+# Härdning av servicen
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/compliance-engine

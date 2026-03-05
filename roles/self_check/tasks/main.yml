@@ -1,0 +1,45 @@
+---
+# Körs ALLTID och FÖRST - även om resten av playbooken misslyckas
+# ska vi helst kunna rapportera att klienten är komprometterad
+
+- name: Kontrollera att ansible-pull-timer existerar och är aktiv
+  systemd:
+    name: ansible-pull.timer
+  register: timer_check
+  failed_when: false
+
+- name: Sätt timer-status
+  set_fact:
+    ansible_timer_active: "{{ timer_check.status.ActiveState | default('inactive') == 'active' }}"
+
+- name: Kontrollera att git-repot är intakt (ej manipulerat)
+  command: git -C /etc/ansible/pull rev-parse HEAD
+  register: git_head
+  changed_when: false
+  failed_when: false
+
+- name: Skicka nödrapport om timer är inaktiverad
+  block:
+    - name: Bygg minimal nödrapport
+      set_fact:
+        emergency_report:
+          schema_version: "1"
+          hostname: "{{ ansible_hostname }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          emergency: true
+          reason: "ansible-pull timer inaktiverad"
+          compliant: false
+
+    - name: Skriv nödrapport
+      copy:
+        content: "{{ emergency_report | to_nice_json }}"
+        dest: /tmp/compliance-report.json
+        mode: '0600'
+
+    - name: Pusha nödrapport till S3
+      command: >
+        aws s3 cp /tmp/compliance-report.json
+        s3://{{ s3_bucket }}/compliance/{{ ansible_hostname }}/latest.json
+        --sse aws:kms
+      failed_when: false
+  when: not ansible_timer_active

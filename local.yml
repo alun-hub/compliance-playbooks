@@ -1,0 +1,10 @@
+---
+- name: Fedora compliance check
+  hosts: localhost
+  connection: local
+  become: yes
+  roles:
+    - self_check       # Verifiera att timern lever - kör alltid
+    - security_checks  # auditd, SELinux, rsyslog, firewalld
+    - openscap         # CIS-scan (hoppas över om nyligen körd)
+    - report           # Bygg JSON och pusha till S3

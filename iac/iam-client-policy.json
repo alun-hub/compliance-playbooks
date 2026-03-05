@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowComplianceReportUpload",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::BUCKET_NAME/compliance/${aws:PrincipalTag/hostname}/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-server-side-encryption": "aws:kms"
+        }
+      }
+    }
+  ]
+}

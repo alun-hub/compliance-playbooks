@@ -1,0 +1,21 @@
+ise:
+  host: ise.example.com
+  username: compliance-svc
+  password: "${ISE_PASSWORD}"   # Sätt via miljövariabel eller secrets manager
+  verify_ssl: true
+
+s3:
+  bucket: ditt-compliance-bucket
+  prefix: compliance/
+
+evaluation:
+  max_report_age_minutes: 90    # Hela rapporten äldre än detta = karantän (klienten tyst)
+  grace_period_minutes: 10      # Nyansluten klient får X min innan vi kräver rapport
+  quarantine_policy: Quarantine # ANC-policyns namn i ISE
+
+# PostgreSQL för Grafana-visualisering (valfritt - utelämna för att hoppa över)
+database:
+  dsn: "postgresql://compliance:LÖSENORD@localhost/compliance"
+
+# Sätt till true för att testa utan att faktiskt karantänera
+dry_run: false

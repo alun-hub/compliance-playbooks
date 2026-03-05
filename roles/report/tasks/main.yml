@@ -1,0 +1,62 @@
+---
+- name: Samla primär MAC-adress
+  shell: |
+    ip -j link show | python3 -c "
+    import json, sys
+    links = json.load(sys.stdin)
+    for l in links:
+        if l.get('link_type') == 'ether' and 'lo' not in l['ifname']:
+            print(l['address'])
+            break
+    "
+  register: mac_address
+  changed_when: false
+
+- name: Bygg compliance-rapport
+  set_fact:
+    compliance_report:
+      schema_version: "1"
+      hostname: "{{ ansible_hostname }}"
+      fqdn: "{{ ansible_fqdn }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      mac_address: "{{ mac_address.stdout | trim }}"
+      os:
+        distribution: "{{ ansible_distribution }}"
+        version: "{{ ansible_distribution_version }}"
+        kernel: "{{ ansible_kernel }}"
+      oscap:
+        score: "{{ oscap_results.score }}"
+        pass: "{{ oscap_results.pass }}"
+        fail: "{{ oscap_results.fail }}"
+        notapplicable: "{{ oscap_results.notapplicable }}"
+        high_severity_failures: "{{ oscap_results.high_severity_failures }}"
+        failed_rules: "{{ oscap_results.failed_rules }}"
+      security_checks: "{{ security_checks }}"
+      compliant: >-
+        {{
+          oscap_results.high_severity_failures == 0 and
+          security_checks.auditd_running and
+          security_checks.selinux_enforcing and
+          security_checks.rsyslog_running and
+          security_checks.rsyslog_forwarding_configured and
+          security_checks.timer_intact
+        }}
+
+- name: Skriv rapport till disk
+  copy:
+    content: "{{ compliance_report | to_nice_json }}"
+    dest: /tmp/compliance-report.json
+    mode: '0600'
+
+- name: Pusha rapport till S3
+  command: >
+    aws s3 cp /tmp/compliance-report.json
+    s3://{{ s3_bucket }}/compliance/{{ ansible_hostname }}/latest.json
+    --sse aws:kms
+  register: s3_push
+  failed_when: false  # Logga fel men stoppa inte körningen
+
+- name: Varna om S3-push misslyckades
+  debug:
+    msg: "VARNING: Kunde inte pusha rapport till S3: {{ s3_push.stderr }}"
+  when: s3_push.rc != 0

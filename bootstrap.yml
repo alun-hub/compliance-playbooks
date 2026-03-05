@@ -1,0 +1,105 @@
+---
+# Körs EN GÅNG via AWX eller manuellt för att sätta upp ansible-pull på nya klienter.
+# Därefter sköter klienten sig själv.
+#
+# Användning:
+#   ansible-playbook -i hosts bootstrap.yml
+#   eller via AWX job template mot ny klient-grupp
+
+- name: Bootstrap Fedora compliance-klient
+  hosts: "{{ target_hosts | default('all') }}"
+  become: yes
+
+  vars:
+    git_repo: "https://git.example.com/compliance-playbooks.git"
+    git_branch: main
+
+  tasks:
+    - name: Kontrollera att vi kör Fedora
+      assert:
+        that: ansible_distribution == "Fedora"
+        fail_msg: "Denna playbook stöder bara Fedora"
+
+    - name: Installera ansible och beroenden
+      dnf:
+        name:
+          - ansible
+          - git
+          - python3-boto3
+          - awscli
+        state: present
+
+    - name: Skapa katalog för ansible-pull
+      file:
+        path: /etc/ansible/pull
+        state: directory
+        mode: '0700'
+        owner: root
+
+    - name: Installera systemd service-fil
+      copy:
+        dest: /etc/systemd/system/ansible-pull.service
+        content: |
+          [Unit]
+          Description=Ansible compliance pull
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          User=root
+          ExecStart=/usr/bin/ansible-pull \
+            --url {{ git_repo }} \
+            --checkout {{ git_branch }} \
+            --directory /etc/ansible/pull \
+            --inventory localhost, \
+            local.yml
+          StandardOutput=journal
+          StandardError=journal
+          SyslogIdentifier=ansible-pull
+        mode: '0644'
+
+    - name: Installera systemd timer-fil
+      copy:
+        dest: /etc/systemd/system/ansible-pull.timer
+        content: |
+          [Unit]
+          Description=Ansible compliance pull timer
+
+          [Timer]
+          OnBootSec=5min
+          OnUnitActiveSec=30min
+          RandomizedDelaySec=5min
+
+          [Install]
+          WantedBy=timers.target
+        mode: '0644'
+
+    - name: Ladda om systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Aktivera och starta timer
+      systemd:
+        name: ansible-pull.timer
+        enabled: yes
+        state: started
+
+    - name: Trigga en första körning direkt
+      systemd:
+        name: ansible-pull.service
+        state: started
+
+    - name: Vänta på att första rapporten ska skickas (max 15 min)
+      wait_for:
+        path: /tmp/compliance-report.json
+        timeout: 900
+
+    - name: Visa status
+      command: systemctl status ansible-pull.timer
+      register: timer_status
+      changed_when: false
+
+    - name: Skriv ut status
+      debug:
+        msg: "{{ timer_status.stdout_lines }}"

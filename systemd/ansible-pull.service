@@ -1,0 +1,16 @@
+[Unit]
+Description=Ansible compliance pull
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/ansible-pull \
+  --url https://git.example.com/compliance-playbooks.git \
+  --directory /etc/ansible/pull \
+  --inventory localhost, \
+  local.yml
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ansible-pull

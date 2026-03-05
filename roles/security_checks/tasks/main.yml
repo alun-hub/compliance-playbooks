@@ -1,0 +1,50 @@
+---
+- name: Kontrollera auditd
+  systemd:
+    name: auditd
+  register: auditd_svc
+
+- name: Kontrollera SELinux-läge
+  command: getenforce
+  register: selinux_mode
+  changed_when: false
+
+- name: Kontrollera rsyslog
+  systemd:
+    name: rsyslog
+  register: rsyslog_svc
+
+- name: Kontrollera rsyslog forwarding-konfiguration
+  find:
+    paths: /etc/rsyslog.d/
+    patterns: "*.conf"
+    contains: "@@|omfwd"  # TCP-forwarding-direktiv
+  register: rsyslog_forward_files
+
+- name: Kontrollera firewalld
+  systemd:
+    name: firewalld
+  register: firewalld_svc
+
+- name: Kontrollera auditd-regler
+  command: auditctl -l
+  register: audit_rules
+  changed_when: false
+  failed_when: false
+
+- name: Kontrollera att ansible-pull-timer är aktiv
+  systemd:
+    name: ansible-pull.timer
+  register: timer_svc
+  failed_when: false  # Kan saknas i testmiljö
+
+- name: Sätt security_checks-fakta
+  set_fact:
+    security_checks:
+      auditd_running: "{{ auditd_svc.status.ActiveState == 'active' }}"
+      selinux_enforcing: "{{ selinux_mode.stdout == 'Enforcing' }}"
+      rsyslog_running: "{{ rsyslog_svc.status.ActiveState == 'active' }}"
+      rsyslog_forwarding_configured: "{{ rsyslog_forward_files.matched > 0 }}"
+      firewalld_running: "{{ firewalld_svc.status.ActiveState == 'active' }}"
+      audit_rules_loaded: "{{ '-a' in audit_rules.stdout or '-w' in audit_rules.stdout }}"
+      timer_intact: "{{ timer_svc.status.ActiveState | default('inactive') == 'active' }}"

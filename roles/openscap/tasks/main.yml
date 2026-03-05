@@ -1,0 +1,47 @@
+---
+- name: Installera openscap och SCAP-innehåll
+  dnf:
+    name:
+      - openscap-scanner
+      - scap-security-guide
+      - python3
+    state: present
+
+- name: Kontrollera ålder på tidigare resultat
+  stat:
+    path: "{{ oscap_result_file }}"
+  register: oscap_existing
+
+- name: Sätt skip-flagga om resultatet är färskt
+  set_fact:
+    oscap_skip: >-
+      {{
+        oscap_existing.stat.exists and
+        (ansible_date_time.epoch | int) - oscap_existing.stat.mtime < (oscap_max_age_minutes * 60)
+      }}
+
+- name: Kör OpenSCAP CIS-scan
+  command: >
+    oscap xccdf eval
+    --profile {{ oscap_profile }}
+    --results {{ oscap_result_file }}
+    {{ oscap_datastream }}
+  register: oscap_run
+  failed_when: oscap_run.rc not in [0, 2]
+  changed_when: false
+  when: not oscap_skip
+
+- name: Kopiera parse-script
+  copy:
+    src: parse_oscap.py
+    dest: /tmp/parse_oscap.py
+    mode: '0755'
+
+- name: Parsa resultat
+  command: python3 /tmp/parse_oscap.py {{ oscap_result_file }}
+  register: oscap_parsed
+  changed_when: false
+
+- name: Sätt oscap-fakta
+  set_fact:
+    oscap_results: "{{ oscap_parsed.stdout | from_json }}"
