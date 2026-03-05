@@ -1,0 +1,11 @@
+---
+# Testvariabler - pekar mot lokal MinIO istället för riktig S3
+s3_bucket: compliance
+s3_endpoint_url: http://localhost:9000
+s3_access_key: minioadmin
+s3_secret_key: minioadmin
+s3_sse: false   # MinIO stöder inte aws:kms
+
+# Kör OpenSCAP (redan installerat)
+oscap_profile: xccdf_org.ssgproject.content_profile_cis_workstation_l1
+oscap_max_age_minutes: 1440

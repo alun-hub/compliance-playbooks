@@ -52,7 +52,11 @@
   command: >
     aws s3 cp /tmp/compliance-report.json
     s3://{{ s3_bucket }}/compliance/{{ ansible_hostname }}/latest.json
-    --sse aws:kms
+    {% if s3_endpoint_url is defined %}--endpoint-url {{ s3_endpoint_url }}{% endif %}
+    {% if s3_sse | default(true) %}--sse aws:kms{% endif %}
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ s3_access_key | default(omit) }}"
+    AWS_SECRET_ACCESS_KEY: "{{ s3_secret_key | default(omit) }}"
   register: s3_push
   failed_when: false  # Logga fel men stoppa inte körningen
 
